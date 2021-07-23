@@ -8,14 +8,14 @@ Here are some instruction to make everything work as well as possible.
 
 ### Compile the rust code
 
-First, you need to build the `select-ball` executables.
+First, you need to build the `stenm` executables.
 For that, you will need [Cargo, and all the rustc stuff][cargo].
 
 ```sh
 $ cargo build --release
 ```
 
-These executables will be located at `target/release/select-ball`.
+These executables will be located at `target/release/stenm`.
 
 ### Build the javascript glue code for web-assembly
 
@@ -25,7 +25,7 @@ For example :
 $ sudo npm install -g wasm-pack
 ```
 
-Then you can build the web-assembly part in the `select-ball-wasm/` directory :
+Then you can build the web-assembly part in the `stenm-wasm/` directory :
 
 ```sh
 $ wasm-pack build --target web -- --features console_error_panic_hook
@@ -33,8 +33,8 @@ $ wasm-pack build --target web -- --features console_error_panic_hook
 
 This will generate a `pkg/` directory with two important files inside:
 
-- `pkg/select_ball.js`: the "glue" JavaScript module to be imported.
-- `pkg/select_ball_bg.wasm`: the compiled WebAssembly module corresponding to the rust code in `src/lib.rs`.
+- `pkg/stenm.js`: the "glue" JavaScript module to be imported.
+- `pkg/stenm_bg.wasm`: the compiled WebAssembly module corresponding to the rust code in `src/lib.rs`.
 
 ## What you need to do to get the web part working
 
