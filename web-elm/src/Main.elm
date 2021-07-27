@@ -32,6 +32,7 @@ import Keyboard exposing (RawKey)
 import NumberInput
 import Pivot exposing (Pivot)
 import Process
+import Regex
 import Set exposing (Set)
 import Simple.Transition as Transition
 import Style
@@ -107,8 +108,15 @@ type alias Model =
     , loadImages : LoadResult
     , loadLights : LoadResult
     , images : Maybe (Pivot Image)
-    , lights : Maybe (List (Float, Float, Float))
+    , lights : Maybe (Pivot Point3d)
     }
+
+type alias Point3d =
+    { x : Float
+    , y : Float
+    , z : Float
+    }
+
 
 type LoadResult
     = LoadIdle
@@ -160,12 +168,14 @@ type alias Image =
 
 type alias Parameters =
     { crop : Maybe Crop
-    , equalize : Bool
-    , levels : Int
-    , sparse : Float
-    , lambda : Float
-    , rho : Float
+    -- , equalize : Bool
+    -- , levels : Int
+    -- , sparse : Float
+    -- , lambda : Float
+    -- , rho : Float
     , maxIterations : Int
+    , z_mean : Float
+    , lights : Maybe (List Point3d)
     , convergenceThreshold : Float
     , maxVerbosity : Int
     }
@@ -175,12 +185,14 @@ encodeParams : Parameters -> Value
 encodeParams params =
     Json.Encode.object
         [ ( "crop", encodeMaybe encodeCrop params.crop )
-        , ( "equalize", Json.Encode.bool params.equalize )
-        , ( "levels", Json.Encode.int params.levels )
-        , ( "sparse", Json.Encode.float params.sparse )
-        , ( "lambda", Json.Encode.float params.lambda )
-        , ( "rho", Json.Encode.float params.rho )
+        -- , ( "equalize", Json.Encode.bool params.equalize )
+        -- , ( "levels", Json.Encode.int params.levels )
+        -- , ( "sparse", Json.Encode.float params.sparse )
+        -- , ( "lambda", Json.Encode.float params.lambda )
+        -- , ( "rho", Json.Encode.float params.rho )
         , ( "maxIterations", Json.Encode.int params.maxIterations )
+        , ( "z_mean", Json.Encode.float params.z_mean )
+        , ( "lights", encodeMaybe encodeLights params.lights )
         , ( "convergenceThreshold", Json.Encode.float params.convergenceThreshold )
         , ( "maxVerbosity", Json.Encode.int params.maxVerbosity )
         ]
@@ -208,15 +220,27 @@ encodeCrop { left, top, right, bottom } =
         , ( "bottom", Json.Encode.int bottom )
         ]
 
+encodeLights : List Point3d -> Value
+encodeLights ptList =
+    Json.Encode.list encodeLight ptList
+
+encodeLight : Point3d -> Value
+encodeLight pt =
+    Json.Encode.object
+        [ ( "x", Json.Encode.float pt.x )
+        , ( "y", Json.Encode.float pt.y )
+        , ( "z", Json.Encode.float pt.z )
+        ]
 
 type alias ParametersForm =
     { crop : CropForm.State
     , maxIterations : NumberInput.Field Int NumberInput.IntError
     , convergenceThreshold : NumberInput.Field Float NumberInput.FloatError
-    , levels : NumberInput.Field Int NumberInput.IntError
-    , sparse : NumberInput.Field Float NumberInput.FloatError
-    , lambda : NumberInput.Field Float NumberInput.FloatError
-    , rho : NumberInput.Field Float NumberInput.FloatError
+    -- , levels : NumberInput.Field Int NumberInput.IntError
+    -- , sparse : NumberInput.Field Float NumberInput.FloatError
+    -- , lambda : NumberInput.Field Float NumberInput.FloatError
+    -- , rho : NumberInput.Field Float NumberInput.FloatError
+    , z_mean : NumberInput.Field Float NumberInput.FloatError
     , maxVerbosity : NumberInput.Field Int NumberInput.IntError
     }
 
@@ -225,10 +249,11 @@ type alias ParametersToggleInfo =
     { crop : Bool
     , maxIterations : Bool
     , convergenceThreshold : Bool
-    , levels : Bool
-    , sparse : Bool
-    , lambda : Bool
-    , rho : Bool
+    -- , levels : Bool
+    -- , sparse : Bool
+    -- , lambda : Bool
+    -- , rho : Bool
+    , z_mean : Bool
     , maxVerbosity : Bool
     }
 
@@ -279,13 +304,15 @@ initialModel size =
 defaultParams : Parameters
 defaultParams =
     { crop = Nothing
-    , equalize = True
-    , levels = 4
-    , sparse = 0.5
-    , lambda = 1.5
-    , rho = 0.1
-    , maxIterations = 40
-    , convergenceThreshold = 0.001
+    -- , equalize = True
+    -- , levels = 4
+    -- , sparse = 0.5
+    -- , lambda = 1.5
+    -- , rho = 0.1
+    , z_mean = 3500.0
+    , maxIterations = 10
+    , lights = Nothing
+    , convergenceThreshold = 0.0001
     , maxVerbosity = 3
     }
 
@@ -306,32 +333,35 @@ defaultParamsForm =
         { anyInt | min = Just 1, max = Just 1000 }
             |> NumberInput.setDefaultIntValue defaultParams.maxIterations
     , convergenceThreshold =
-        { defaultValue = defaultParams.convergenceThreshold
-        , min = Just 0.0
-        , max = Nothing
-        , increase = \x -> x * sqrt 2
-        , decrease = \x -> x / sqrt 2
-        , input = String.fromFloat defaultParams.convergenceThreshold
-        , decodedInput = Ok defaultParams.convergenceThreshold
-        }
-    , levels =
-        { anyInt | min = Just 1, max = Just 10 }
-            |> NumberInput.setDefaultIntValue defaultParams.levels
-    , sparse =
-        { anyFloat | min = Just 0.0, max = Just 1.0 }
-            |> NumberInput.setDefaultFloatValue defaultParams.sparse
-    , lambda =
-        { anyFloat | min = Just 0.0 }
-            |> NumberInput.setDefaultFloatValue defaultParams.lambda
-    , rho =
-        { defaultValue = defaultParams.rho
-        , min = Just 0.0
-        , max = Nothing
-        , increase = \x -> x * sqrt 2
-        , decrease = \x -> x / sqrt 2
-        , input = String.fromFloat defaultParams.rho
-        , decodedInput = Ok defaultParams.rho
-        }
+         { defaultValue = defaultParams.convergenceThreshold
+         , min = Just 0.0
+         , max = Nothing
+         , increase = \x -> x * sqrt 2
+         , decrease = \x -> x / sqrt 2
+         , input = String.fromFloat defaultParams.convergenceThreshold
+         , decodedInput = Ok defaultParams.convergenceThreshold
+         }
+    -- , levels =
+    --     { anyInt | min = Just 1, max = Just 10 }
+    --         |> NumberInput.setDefaultIntValue defaultParams.levels
+    -- , sparse =
+    --     { anyFloat | min = Just 0.0, max = Just 1.0 }
+    --         |> NumberInput.setDefaultFloatValue defaultParams.sparse
+    -- , lambda =
+    --     { anyFloat | min = Just 0.0 }
+    --         |> NumberInput.setDefaultFloatValue defaultParams.lambda
+    -- , rho =
+    --     { defaultValue = defaultParams.rho
+    --     , min = Just 0.0
+    --     , max = Nothing
+    --     , increase = \x -> x * sqrt 2
+    --     , decrease = \x -> x / sqrt 2
+    --     , input = String.fromFloat defaultParams.rho
+    --     , decodedInput = Ok defaultParams.rho
+    --     }
+    , z_mean =
+        { anyFloat | min = Just 0.0001, increase = ((*) 10.0), decrease = ((*) 0.1) }
+            |> NumberInput.setDefaultFloatValue defaultParams.z_mean
     , maxVerbosity =
         { anyInt | min = Just 0, max = Just 4 }
             |> NumberInput.setDefaultIntValue defaultParams.maxVerbosity
@@ -343,10 +373,11 @@ defaultParamsInfo =
     { crop = False
     , maxIterations = False
     , convergenceThreshold = False
-    , levels = False
-    , sparse = False
-    , lambda = False
-    , rho = False
+    -- , levels = False
+    -- , sparse = False
+    -- , lambda = False
+    -- , rho = False
+    , z_mean = False
     , maxVerbosity = False
     }
 
@@ -420,14 +451,15 @@ type ViewImgMsg
 
 
 type ParamsMsg
-    = ToggleEqualize Bool
-    | ChangeMaxIter String
+    --= ToggleEqualize Bool
+    = ChangeMaxIter String
     | ChangeMaxVerbosity String
     | ChangeConvergenceThreshold String
-    | ChangeLevels String
-    | ChangeSparse String
-    | ChangeLambda String
-    | ChangeRho String
+    -- | ChangeLevels String
+    -- | ChangeSparse String
+    -- | ChangeLambda String
+    -- | ChangeRho String
+    | ChangeZMean String
     | ToggleCrop Bool
     | ChangeCropLeft String
     | ChangeCropTop String
@@ -439,11 +471,12 @@ type ParamsInfoMsg
     = ToggleInfoCrop Bool
     | ToggleInfoMaxIterations Bool
     | ToggleInfoMaxVerbosity Bool
+    | ToggleInfoZMean Bool
     | ToggleInfoConvergenceThreshold Bool
-    | ToggleInfoLevels Bool
-    | ToggleInfoSparse Bool
-    | ToggleInfoLambda Bool
-    | ToggleInfoRho Bool
+    -- | ToggleInfoLevels Bool
+    -- | ToggleInfoSparse Bool
+    -- | ToggleInfoLambda Bool
+    -- | ToggleInfoRho Bool
 
 
 type NavigationMsg
@@ -624,10 +657,10 @@ update msg model =
         ( KeyDown rawKey, ViewImgs { images } ) ->
             case Keyboard.navigationKey rawKey of
                 Just Keyboard.ArrowRight ->
-                    ( { model | state = ViewImgs { images = goToNextImage images } }, Cmd.none )
+                    ( { model | state = ViewImgs { images = goToNextImage images }, lights = Maybe.map goToNextLight model.lights }, Cmd.none )
 
                 Just Keyboard.ArrowLeft ->
-                    ( { model | state = ViewImgs { images = goToPreviousImage images } }, Cmd.none )
+                    ( { model | state = ViewImgs { images = goToPreviousImage images }, lights = Maybe.map goToPreviousLight model.lights }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -670,7 +703,7 @@ update msg model =
         ( NavigationMsg navMsg, Logs data ) ->
             ( goTo navMsg data model, Cmd.none )
 
-        ( NavigationMsg GoToPageImages, Home Idle ) ->
+        ( NavigationMsg GoToPageImages, Home _ ) ->
             case model.images of
                 Nothing ->
                     ( { model | loadImages = LoadError "Lacking images to show for some reason" }, Cmd.none )
@@ -901,13 +934,13 @@ update msg model =
             ( { model | pointerMode = WaitingDraw }, Cmd.none )
 
         ( ClickPreviousImage, ViewImgs { images } ) ->
-            ( { model | state = ViewImgs { images = goToPreviousImage images } }, Cmd.none )
+            ( { model | state = ViewImgs { images = goToPreviousImage images }, lights = Maybe.map goToPreviousLight model.lights }, Cmd.none )
 
         ( ClickPreviousImage, Registration _ ) ->
             ( { model | registeredImages = Maybe.map goToPreviousImage model.registeredImages }, Cmd.none )
 
         ( ClickNextImage, ViewImgs { images } ) ->
-            ( { model | state = ViewImgs { images = goToNextImage images } }, Cmd.none )
+            ( { model | state = ViewImgs { images = goToNextImage images }, lights = Maybe.map goToNextLight model.lights }, Cmd.none )
 
         ( ClickNextImage, Registration _ ) ->
             ( { model | registeredImages = Maybe.map goToNextImage model.registeredImages }, Cmd.none )
@@ -1031,14 +1064,18 @@ update msg model =
                 -- myCsv = content
                 --     |> Csv.parseWith ';'
 
-                decoder : CsvDecode.Decoder ( Float, Float, Float )
+                decoder : CsvDecode.Decoder Point3d
                 decoder =
-                    CsvDecode.map3 (\x y z -> ( x, y, z ))
-                        (CsvDecode.field "x" CsvDecode.float)
-                        (CsvDecode.field "y" CsvDecode.float)
-                        (CsvDecode.field "z" CsvDecode.float)
+                    -- CsvDecode.map3 (\x y z -> ( x, y, z ))
+                    --     (CsvDecode.field "x" CsvDecode.float)
+                    --     (CsvDecode.field "y" CsvDecode.float)
+                    --     (CsvDecode.field "z" CsvDecode.float)
+                    CsvDecode.into Point3d
+                        |> CsvDecode.pipeline (CsvDecode.field "x" CsvDecode.float)
+                        |> CsvDecode.pipeline (CsvDecode.field "y" CsvDecode.float)
+                        |> CsvDecode.pipeline (CsvDecode.field "z" CsvDecode.float)
 
-                myCsv : Result CsvDecode.Error (List ( Float, Float, Float ))
+                myCsv : Result CsvDecode.Error (List Point3d)
                 myCsv = CsvDecode.decodeCustom { fieldSeparator = ';' } CsvDecode.FieldNamesFromFirstRow decoder content
 
                 youCanGo : Bool
@@ -1049,7 +1086,9 @@ update msg model =
                         False
             in
             ( { model
-                | lights = myCsv |> Result.toMaybe
+                | lights = myCsv
+                     |> Result.toMaybe
+                     |> Maybe.andThen Pivot.fromList
                 , loadLights = case myCsv of
                     Err err ->
                         err
@@ -1156,6 +1195,16 @@ goToNextImage images =
     Maybe.withDefault (Pivot.goToStart images) (Pivot.goR images)
 
 
+goToPreviousLight : Pivot Point3d -> Pivot Point3d
+goToPreviousLight images =
+    Maybe.withDefault (Pivot.goToEnd images) (Pivot.goL images)
+
+
+goToNextLight : Pivot Point3d -> Pivot Point3d
+goToNextLight images =
+    Maybe.withDefault (Pivot.goToStart images) (Pivot.goR images)
+
+
 toBBox : Crop -> BBox
 toBBox { left, top, right, bottom } =
     { left = toFloat left
@@ -1245,9 +1294,6 @@ goTo msg data model =
 updateParams : ParamsMsg -> Model -> Model
 updateParams msg ({ params, paramsForm } as model) =
     case msg of
-        ToggleEqualize equalize ->
-            { model | params = { params | equalize = equalize } }
-
         ChangeMaxVerbosity str ->
             let
                 updatedField : NumberInput.Field Int NumberInput.IntError
@@ -1308,85 +1354,106 @@ updateParams msg ({ params, paramsForm } as model) =
                 Err _ ->
                     { model | paramsForm = updatedForm }
 
-        ChangeLevels str ->
-            let
-                updatedField : NumberInput.Field Int NumberInput.IntError
-                updatedField =
-                    NumberInput.updateInt str paramsForm.levels
+        -- ChangeLevels str ->
+        --     let
+        --         updatedField : NumberInput.Field Int NumberInput.IntError
+        --         updatedField =
+        --             NumberInput.updateInt str paramsForm.levels
 
-                updatedForm : ParametersForm
-                updatedForm =
-                    { paramsForm | levels = updatedField }
-            in
-            case updatedField.decodedInput of
-                Ok levels ->
-                    { model
-                        | params = { params | levels = levels }
-                        , paramsForm = updatedForm
-                    }
+        --         updatedForm : ParametersForm
+        --         updatedForm =
+        --             { paramsForm | levels = updatedField }
+        --     in
+        --     case updatedField.decodedInput of
+        --         Ok levels ->
+        --             { model
+        --                 | params = { params | levels = levels }
+        --                 , paramsForm = updatedForm
+        --             }
 
-                Err _ ->
-                    { model | paramsForm = updatedForm }
+        --         Err _ ->
+        --             { model | paramsForm = updatedForm }
 
-        ChangeSparse str ->
+        -- ChangeSparse str ->
+        --     let
+        --         updatedField : NumberInput.Field Float NumberInput.FloatError
+        --         updatedField =
+        --             NumberInput.updateFloat str paramsForm.sparse
+
+        --         updatedForm : ParametersForm
+        --         updatedForm =
+        --             { paramsForm | sparse = updatedField }
+        --     in
+        --     case updatedField.decodedInput of
+        --         Ok sparse ->
+        --             { model
+        --                 | params = { params | sparse = sparse }
+        --                 , paramsForm = updatedForm
+        --             }
+
+        --         Err _ ->
+        --             { model | paramsForm = updatedForm }
+
+        -- ChangeLambda str ->
+        --     let
+        --         updatedField : NumberInput.Field Float NumberInput.FloatError
+        --         updatedField =
+        --             NumberInput.updateFloat str paramsForm.lambda
+
+        --         updatedForm : ParametersForm
+        --         updatedForm =
+        --             { paramsForm | lambda = updatedField }
+        --     in
+        --     case updatedField.decodedInput of
+        --         Ok lambda ->
+        --             { model
+        --                 | params = { params | lambda = lambda }
+        --                 , paramsForm = updatedForm
+        --             }
+
+        --         Err _ ->
+        --             { model | paramsForm = updatedForm }
+
+        -- ChangeRho str ->
+        --     let
+        --         updatedField : NumberInput.Field Float NumberInput.FloatError
+        --         updatedField =
+        --             NumberInput.updateFloat str paramsForm.rho
+
+        --         updatedForm : ParametersForm
+        --         updatedForm =
+        --             { paramsForm | rho = updatedField }
+        --     in
+        --     case updatedField.decodedInput of
+        --         Ok rho ->
+        --             { model
+        --                 | params = { params | rho = rho }
+        --                 , paramsForm = updatedForm
+        --             }
+
+        --         Err _ ->
+        --             { model | paramsForm = updatedForm }
+
+        ChangeZMean str ->
             let
                 updatedField : NumberInput.Field Float NumberInput.FloatError
                 updatedField =
-                    NumberInput.updateFloat str paramsForm.sparse
+                    NumberInput.updateFloat str paramsForm.z_mean
 
                 updatedForm : ParametersForm
                 updatedForm =
-                    { paramsForm | sparse = updatedField }
+                    { paramsForm | z_mean = updatedField }
             in
             case updatedField.decodedInput of
-                Ok sparse ->
+                Ok z ->
                     { model
-                        | params = { params | sparse = sparse }
+                        | params = { params | z_mean = z }
                         , paramsForm = updatedForm
                     }
 
                 Err _ ->
                     { model | paramsForm = updatedForm }
 
-        ChangeLambda str ->
-            let
-                updatedField : NumberInput.Field Float NumberInput.FloatError
-                updatedField =
-                    NumberInput.updateFloat str paramsForm.lambda
-
-                updatedForm : ParametersForm
-                updatedForm =
-                    { paramsForm | lambda = updatedField }
-            in
-            case updatedField.decodedInput of
-                Ok lambda ->
-                    { model
-                        | params = { params | lambda = lambda }
-                        , paramsForm = updatedForm
-                    }
-
-                Err _ ->
-                    { model | paramsForm = updatedForm }
-
-        ChangeRho str ->
-            let
-                updatedField : NumberInput.Field Float NumberInput.FloatError
-                updatedField =
-                    NumberInput.updateFloat str paramsForm.rho
-
-                updatedForm : ParametersForm
-                updatedForm =
-                    { paramsForm | rho = updatedField }
-            in
-            case updatedField.decodedInput of
-                Ok rho ->
-                    { model
-                        | params = { params | rho = rho }
-                        , paramsForm = updatedForm
-                    }
-
-                Err _ ->
-                    { model | paramsForm = updatedForm }
 
         ToggleCrop activeCrop ->
             let
@@ -1466,20 +1533,23 @@ updateParamsInfo msg toggleInfo =
         ToggleInfoMaxVerbosity visible ->
             { toggleInfo | maxVerbosity = visible }
 
+        ToggleInfoZMean visible ->
+            { toggleInfo | z_mean = visible }
+
         ToggleInfoConvergenceThreshold visible ->
             { toggleInfo | convergenceThreshold = visible }
 
-        ToggleInfoLevels visible ->
-            { toggleInfo | levels = visible }
+        -- ToggleInfoLevels visible ->
+        --     { toggleInfo | levels = visible }
 
-        ToggleInfoSparse visible ->
-            { toggleInfo | sparse = visible }
+        -- ToggleInfoSparse visible ->
+        --     { toggleInfo | sparse = visible }
 
-        ToggleInfoLambda visible ->
-            { toggleInfo | lambda = visible }
+        -- ToggleInfoLambda visible ->
+        --     { toggleInfo | lambda = visible }
 
-        ToggleInfoRho visible ->
-            { toggleInfo | rho = visible }
+        -- ToggleInfoRho visible ->
+        --     { toggleInfo | rho = visible }
 
 
 
@@ -1680,7 +1750,7 @@ runProgressBar model =
         , height (Element.px progressBarHeight)
         , Element.Font.size 12
         , Element.behindContent (progressBar Style.almostWhite 1.0)
-        , Element.behindContent (progressBar Style.runProgressColor <| estimateProgress model)
+        , Element.behindContent (progressBar Style.runProgressColor <| 0.0)--estimateProgress model)
         , Element.inFront progressBarRunButton
         , Element.inFront progressBarStopButton
         , Element.inFront progressBarSaveButton
@@ -1695,11 +1765,12 @@ runButton content params paramsForm =
         hasNoError =
             List.isEmpty (CropForm.errors paramsForm.crop)
                 && isOk paramsForm.maxIterations.decodedInput
+                && isOk paramsForm.z_mean.decodedInput
                 && isOk paramsForm.convergenceThreshold.decodedInput
-                && isOk paramsForm.levels.decodedInput
-                && isOk paramsForm.sparse.decodedInput
-                && isOk paramsForm.lambda.decodedInput
-                && isOk paramsForm.rho.decodedInput
+                -- && isOk paramsForm.levels.decodedInput
+                -- && isOk paramsForm.sparse.decodedInput
+                -- && isOk paramsForm.lambda.decodedInput
+                -- && isOk paramsForm.rho.decodedInput
     in
     if hasNoError then
         Element.Input.button
@@ -1789,50 +1860,50 @@ progressMessage model =
             "Warping and encoding image " ++ String.fromInt img ++ " / " ++ String.fromInt model.imagesCount
 
 
-estimateProgress : Model -> Float
-estimateProgress model =
-    let
-        subprogress : Int -> Int -> Float
-        subprogress n nCount =
-            toFloat n / toFloat nCount
-
-        lvlCount : Int
-        lvlCount =
-            model.params.levels
-
-        levelProgress : Int -> Float
-        levelProgress lvl =
-            subprogress (lvlCount - lvl - 1) lvlCount
-    in
-    case model.runStep of
-        StepNotStarted ->
-            0.0
-
-        -- 0 to 10% for pyramid
-        StepMultiresPyramid ->
-            0.0
-
-        -- Say 10% to 80% to share for all levels
-        -- We can imagine each next level 2 times slower (approximation)
-        StepLevel level ->
-            0.1 + 0.7 * levelProgress level
-
-        StepIteration level iter ->
-            0.1 + 0.7 * levelProgress level + 0.7 / toFloat lvlCount * subprogress iter model.params.maxIterations
-
-        -- Say 80% to 90% for applying registration to cropped images
-        StepApplying img ->
-            0.8 + 0.1 * subprogress img model.imagesCount
-
-        -- Say 90% to 100% for encoding the registered cropped images
-        StepEncoding img ->
-            0.9 + 0.1 * subprogress img model.imagesCount
-
-        StepDone ->
-            1.0
-
-        StepSaving img ->
-            subprogress img model.imagesCount
+-- estimateProgress : Model -> Float
+-- estimateProgress model =
+--     let
+--         subprogress : Int -> Int -> Float
+--         subprogress n nCount =
+--             toFloat n / toFloat nCount
+-- 
+--         lvlCount : Int
+--         lvlCount =
+--             model.params.levels
+-- 
+--         levelProgress : Int -> Float
+--         levelProgress lvl =
+--             subprogress (lvlCount - lvl - 1) lvlCount
+--     in
+--     case model.runStep of
+--         StepNotStarted ->
+--             0.0
+-- 
+--         -- 0 to 10% for pyramid
+--         StepMultiresPyramid ->
+--             0.0
+-- 
+--         -- Say 10% to 80% to share for all levels
+--         -- We can imagine each next level 2 times slower (approximation)
+--         StepLevel level ->
+--             0.1 + 0.7 * levelProgress level
+-- 
+--         StepIteration level iter ->
+--             0.1 + 0.7 * levelProgress level + 0.7 / toFloat lvlCount * subprogress iter model.params.maxIterations
+-- 
+--         -- Say 80% to 90% for applying registration to cropped images
+--         StepApplying img ->
+--             0.8 + 0.1 * subprogress img model.imagesCount
+-- 
+--         -- Say 90% to 100% for encoding the registered cropped images
+--         StepEncoding img ->
+--             0.9 + 0.1 * subprogress img model.imagesCount
+-- 
+--         StepDone ->
+--             1.0
+-- 
+--         StepSaving img ->
+--             subprogress img model.imagesCount
 
 
 progressBar : Element.Color -> Float -> Element Msg
@@ -2167,15 +2238,15 @@ viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, registeredImages } as
                     , displayErrors (CropForm.errors paramsForm.crop)
                     ]
 
-                -- Equalize mean intensities
-                , Element.column [ spacing 10 ]
-                    [ Element.text "Equalize mean intensities:"
-                    , Element.row [ spacing 10 ]
-                        [ Element.text "off"
-                        , toggle (ParamsMsg << ToggleEqualize) params.equalize 30 "Toggle mean intensities equalization"
-                        , Element.text "on"
-                        ]
-                    ]
+                -- # -- Equalize mean intensities
+                -- # , Element.column [ spacing 10 ]
+                -- #     [ Element.text "Equalize mean intensities:"
+                -- #     , Element.row [ spacing 10 ]
+                -- #         [ Element.text "off"
+                -- #         , toggle (ParamsMsg << ToggleEqualize) params.equalize 30 "Toggle mean intensities equalization"
+                -- #         , Element.text "on"
+                -- #         ]
+                -- #     ]
 
                 -- Maximum number of iterations
                 , Element.column [ spacing 10 ]
@@ -2211,70 +2282,86 @@ viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, registeredImages } as
                     , displayFloatErrors paramsForm.convergenceThreshold.decodedInput
                     ]
 
-                -- Multi-resolution pyramid levels
-                , Element.column [ spacing 10 ]
-                    [ Element.row [ spacing 10 ]
-                        [ Element.text "Number of pyramid levels:"
-                        , Element.Input.checkbox []
-                            { onChange = ParamsInfoMsg << ToggleInfoLevels
-                            , icon = infoIcon
-                            , checked = paramsInfo.levels
-                            , label = Element.Input.labelHidden "Show detail info about the levels parameter"
-                            }
-                        ]
-                    , moreInfo paramsInfo.levels "The number of levels for the multi-resolution approach. Each level halves/doubles the resolution of the previous one. The algorithm starts at the lowest resolution and transfers the converged parameters at one resolution to the initialization of the next. Increasing the number of levels enables better convergence for bigger movements but too many levels might make it definitively drift away. Targetting a lowest resolution of about 100x100 is generally good enough. The number of levels also has a joint interaction with the sparse threshold parameter so keep that in mind while changing this parameter."
-                    , Element.text ("(default to " ++ String.fromInt defaultParams.levels ++ ")")
-                    , intInput paramsForm.levels (ParamsMsg << ChangeLevels) "Number of pyramid levels"
-                    , displayIntErrors paramsForm.levels.decodedInput
-                    ]
+                -- # -- Multi-resolution pyramid levels
+                -- # , Element.column [ spacing 10 ]
+                -- #     [ Element.row [ spacing 10 ]
+                -- #         [ Element.text "Number of pyramid levels:"
+                -- #         , Element.Input.checkbox []
+                -- #             { onChange = ParamsInfoMsg << ToggleInfoLevels
+                -- #             , icon = infoIcon
+                -- #             , checked = paramsInfo.levels
+                -- #             , label = Element.Input.labelHidden "Show detail info about the levels parameter"
+                -- #             }
+                -- #         ]
+                -- #     , moreInfo paramsInfo.levels "The number of levels for the multi-resolution approach. Each level halves/doubles the resolution of the previous one. The algorithm starts at the lowest resolution and transfers the converged parameters at one resolution to the initialization of the next. Increasing the number of levels enables better convergence for bigger movements but too many levels might make it definitively drift away. Targetting a lowest resolution of about 100x100 is generally good enough. The number of levels also has a joint interaction with the sparse threshold parameter so keep that in mind while changing this parameter."
+                -- #     , Element.text ("(default to " ++ String.fromInt defaultParams.levels ++ ")")
+                -- #     , intInput paramsForm.levels (ParamsMsg << ChangeLevels) "Number of pyramid levels"
+                -- #     , displayIntErrors paramsForm.levels.decodedInput
+                -- #     ]
 
-                -- Sparse ratio threshold
-                , Element.column [ spacing 10 ]
-                    [ Element.row [ spacing 10 ]
-                        [ Element.text "Sparse ratio threshold to switch:"
-                        , Element.Input.checkbox []
-                            { onChange = ParamsInfoMsg << ToggleInfoSparse
-                            , icon = infoIcon
-                            , checked = paramsInfo.sparse
-                            , label = Element.Input.labelHidden "Show detail info about the sparse parameter"
-                            }
-                        ]
-                    , moreInfo paramsInfo.sparse "Sparse ratio threshold to switch between dense and sparse registration. At each pyramid level only the pixels with the highest gradient intensities are kept, making each level sparser than the previous one. Once the ratio of selected pixels goes below this sparse ratio parameter, the algorithm performs a sparse registration, using only the selected points at that level. If you want to use a dense registration at every level, you can set this parameter to 0."
-                    , Element.text ("(default to " ++ String.fromFloat defaultParams.sparse ++ ")")
-                    , floatInput paramsForm.sparse (ParamsMsg << ChangeSparse) "Sparse ratio threshold to switch"
-                    , displayFloatErrors paramsForm.sparse.decodedInput
-                    ]
+                -- # -- Sparse ratio threshold
+                -- # , Element.column [ spacing 10 ]
+                -- #     [ Element.row [ spacing 10 ]
+                -- #         [ Element.text "Sparse ratio threshold to switch:"
+                -- #         , Element.Input.checkbox []
+                -- #             { onChange = ParamsInfoMsg << ToggleInfoSparse
+                -- #             , icon = infoIcon
+                -- #             , checked = paramsInfo.sparse
+                -- #             , label = Element.Input.labelHidden "Show detail info about the sparse parameter"
+                -- #             }
+                -- #         ]
+                -- #     , moreInfo paramsInfo.sparse "Sparse ratio threshold to switch between dense and sparse registration. At each pyramid level only the pixels with the highest gradient intensities are kept, making each level sparser than the previous one. Once the ratio of selected pixels goes below this sparse ratio parameter, the algorithm performs a sparse registration, using only the selected points at that level. If you want to use a dense registration at every level, you can set this parameter to 0."
+                -- #     , Element.text ("(default to " ++ String.fromFloat defaultParams.sparse ++ ")")
+                -- #     , floatInput paramsForm.sparse (ParamsMsg << ChangeSparse) "Sparse ratio threshold to switch"
+                -- #     , displayFloatErrors paramsForm.sparse.decodedInput
+                -- #     ]
 
-                -- lambda
-                , Element.column [ spacing 10 ]
-                    [ Element.row [ spacing 10 ]
-                        [ Element.text ("lambda: (default to " ++ String.fromFloat defaultParams.lambda ++ ")")
-                        , Element.Input.checkbox []
-                            { onChange = ParamsInfoMsg << ToggleInfoLambda
-                            , icon = infoIcon
-                            , checked = paramsInfo.lambda
-                            , label = Element.Input.labelHidden "Show detail info about the lambda parameter"
-                            }
-                        ]
-                    , moreInfo paramsInfo.lambda "Weight of the L1 term (high means no correction)."
-                    , floatInput paramsForm.lambda (ParamsMsg << ChangeLambda) "lambda"
-                    , displayFloatErrors paramsForm.lambda.decodedInput
-                    ]
+                -- # -- lambda
+                -- # , Element.column [ spacing 10 ]
+                -- #     [ Element.row [ spacing 10 ]
+                -- #         [ Element.text ("lambda: (default to " ++ String.fromFloat defaultParams.lambda ++ ")")
+                -- #         , Element.Input.checkbox []
+                -- #             { onChange = ParamsInfoMsg << ToggleInfoLambda
+                -- #             , icon = infoIcon
+                -- #             , checked = paramsInfo.lambda
+                -- #             , label = Element.Input.labelHidden "Show detail info about the lambda parameter"
+                -- #             }
+                -- #         ]
+                -- #     , moreInfo paramsInfo.lambda "Weight of the L1 term (high means no correction)."
+                -- #     , floatInput paramsForm.lambda (ParamsMsg << ChangeLambda) "lambda"
+                -- #     , displayFloatErrors paramsForm.lambda.decodedInput
+                -- #     ]
 
-                -- rho
+                -- # -- rho
+                -- # , Element.column [ spacing 10 ]
+                -- #     [ Element.row [ spacing 10 ]
+                -- #         [ Element.text ("rho: (default to " ++ String.fromFloat defaultParams.rho ++ ")")
+                -- #         , Element.Input.checkbox []
+                -- #             { onChange = ParamsInfoMsg << ToggleInfoRho
+                -- #             , icon = infoIcon
+                -- #             , checked = paramsInfo.rho
+                -- #             , label = Element.Input.labelHidden "Show detail info about the rho parameter"
+                -- #             }
+                -- #         ]
+                -- #     , moreInfo paramsInfo.rho "Lagrangian penalty."
+                -- #     , floatInput paramsForm.rho (ParamsMsg << ChangeRho) "rho"
+                -- #     , displayFloatErrors paramsForm.rho.decodedInput
+                -- #     ]
+
+                -- z mean
                 , Element.column [ spacing 10 ]
                     [ Element.row [ spacing 10 ]
-                        [ Element.text ("rho: (default to " ++ String.fromFloat defaultParams.rho ++ ")")
+                        [ Element.text ("z-mean: (default to " ++ String.fromFloat defaultParams.z_mean ++ ")")
                         , Element.Input.checkbox []
-                            { onChange = ParamsInfoMsg << ToggleInfoRho
+                            { onChange = ParamsInfoMsg << ToggleInfoZMean
                             , icon = infoIcon
-                            , checked = paramsInfo.rho
-                            , label = Element.Input.labelHidden "Show detail info about the rho parameter"
+                            , checked = paramsInfo.z_mean
+                            , label = Element.Input.labelHidden "Show detail info about the z_mean parameter"
                             }
                         ]
-                    , moreInfo paramsInfo.rho "Lagrangian penalty."
-                    , floatInput paramsForm.rho (ParamsMsg << ChangeRho) "rho"
-                    , displayFloatErrors paramsForm.rho.decodedInput
+                    , moreInfo paramsInfo.z_mean "Lagrangian penalty."
+                    , floatInput paramsForm.z_mean (ParamsMsg << ChangeZMean) "z_mean"
+                    , displayFloatErrors paramsForm.z_mean.decodedInput
                     ]
 
                 -- Maximum verbosity
@@ -2765,6 +2852,19 @@ viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, registeredImages } as m
                             (Json.Decode.field "clientY" Json.Decode.float)
                 ]
                 [ clearCanvas, renderedImage, renderedBbox ]
+
+        pointToText : Point3d -> String
+        pointToText pt =
+            String.fromFloat pt.x ++ " ; " ++ String.fromFloat pt.y ++ " ; " ++ String.fromFloat pt.z
+
+
+        lightDirection : Element msg
+        lightDirection = model
+            |> (.lights)
+            |> Maybe.map Pivot.getC
+            |> Maybe.map pointToText
+            |> Maybe.withDefault "Light unreadable..."
+            |> Element.text
     in
     Element.column [ height fill ]
         [ headerBar
@@ -2774,6 +2874,7 @@ viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, registeredImages } as m
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
+        , lightDirection
         , Element.html <|
             Html.node "style"
                 []
@@ -2813,30 +2914,101 @@ zoomWheelMsg viewer event =
         ZoomMsg (ZoomToward coordinates)
 
 
+type GoState
+    = Go
+    | LackingLights Int
+    | LackingImages Int
+    | NoImage
+    | NoLight
+    | NoImageNorLight
+
 viewHome : FileDraggingState -> LoadResult -> LoadResult -> Element Msg
 viewHome draggingState loadImages loadLights =
     let
-        youCanGo : Bool
+        youCanGo : GoState
         youCanGo = case (loadImages, loadLights) of
-            ( LoadOk _, LoadOk _ ) ->
-                True
+            ( LoadOk imNb, LoadOk lgtNb ) ->
+                let
+                    im : Int
+                    im = String.toInt imNb |> Maybe.withDefault 0
+
+                    lgt : Int
+                    lgt = String.toInt lgtNb |> Maybe.withDefault 0
+
+                    diff : Int
+                    diff = im - lgt
+                in
+                case (im, lgt) of
+                    (0, 0) ->
+                        NoImageNorLight
+                    (0, _) ->
+                        NoImage
+                    (_, 0) ->
+                        NoLight
+                    (_, _) ->
+                        if diff > 0 then
+                            LackingLights diff
+                        else if diff < 0 then
+                            LackingImages (0 - diff)
+                        else
+                            Go
+
+            ( _, LoadOk _ ) ->
+                NoImage
+
+            ( LoadOk _, _ ) ->
+                NoLight
+
             ( _, _ ) ->
-                False
-    in
-    Element.column (padding 20 :: width fill :: height fill :: onDropAttributes)
-        [ viewTitle
-        , imageDropAndLoadArea draggingState loadImages
-        , lightsDropAndLoadArea draggingState loadLights
-        , Element.Input.button
+                NoImageNorLight
+
+        goButton : Element Msg
+        goButton = Element.Input.button
             [ padding 6
             , Element.Background.color (Element.rgba255 255 255 255 0.8)
             , Element.Font.color Style.black
             , Element.htmlAttribute <| Html.Attributes.style "box-shadow" "none"
             , Element.htmlAttribute <| Html.Attributes.title "Go"
+            , centerX
+            , centerY
             ]
-            { onPress = if youCanGo then Just (NavigationMsg GoToPageImages) else Nothing
-            , label = Icon.image 48
+            { onPress = case youCanGo of
+                -- Extra security
+                Go -> Just (NavigationMsg GoToPageImages)
+                _ -> Nothing
+            , label = Icon.logIn 48
             }
+
+        goView : Element Msg
+        goView = Element.row
+            [ centerX
+            , centerY
+            , spacing 32
+            ]
+            (case youCanGo of
+                Go ->
+                    [ goButton
+                    , Element.Input.button [] { onPress = Just (NavigationMsg GoToPageImages), label = Element.text "Go to the images preparation" }
+                    ]
+                NoImage ->
+                    [ Element.text " - Import images to compute the normal map from" ]
+                NoLight ->
+                    [ Element.text " - Import a CSV file containing three columns : x, y and z coordinates for each light direction" ]
+                NoImageNorLight ->
+                    [ Element.text " - Import images to compute the normal map from\n - Import a CSV file containing three columns : x, y and z coordinates for each light direction"
+                    ]
+                LackingImages amount ->
+                    [ amount |> String.fromInt |> (++) "Images files are missing compared to the number of light vectors you have inputed :" |> Element.text ]
+                LackingLights amount ->
+                    [ amount |> String.fromInt |> (++) "Light vectors are missing compared to the number of images you have inputed : " |> Element.text ]
+            )
+    in
+    Element.column (padding 20 :: width fill :: height fill :: spacing 64 :: onDropAttributes)
+    -- Element.column (padding 20 :: width fill :: height fill :: spacing 64 :: Element.htmlAttribute (filesLengthOn "dragover" FilesLengthOver):: Element.htmlAttribute (filesLengthOn "drop" FilesLengthOver) :: [])
+        [ viewTitle
+        , goView
+        , imageDropAndLoadArea draggingState loadImages
+        , lightsDropAndLoadArea draggingState loadLights
         ]
 
 
@@ -2962,7 +3134,9 @@ imageDropAndLoadArea draggingState loadState =
         dropOrLoadText : Element Msg
         dropOrLoadText =
             Element.row [ centerX ]
-                [ Element.text "Drop images or "
+                [ Element.text "Drop "
+                , Element.el [Element.Font.extraBold, Element.Font.size 22, Element.Font.color Style.dropColor] (Element.text "images")
+                , Element.text " or "
                 , Element.html
                     (File.hiddenInputMultiple
                         "TheFileInput"
@@ -2979,8 +3153,8 @@ imageDropAndLoadArea draggingState loadState =
 
         useDirectlyProvided : Element Msg
         useDirectlyProvided =
-            Element.paragraph [ centerX, Element.Font.center ]
-                [ Element.text "You can also directly use "
+            Element.column [ centerX, Element.Font.center, padding 6 ]
+                [ Element.text "You can also directly use"
                 , Element.Input.button [ Element.Font.underline ]
                     { onPress =
                         Just
@@ -2996,19 +3170,59 @@ imageDropAndLoadArea draggingState loadState =
                     , label = Element.text "this example set of 6 images"
                     }
                 ]
+
+        (validationIcon, textElement) = case loadState of
+            LoadIdle ->
+                (Icon.search 48, Element.none)
+
+            LoadOk headers ->
+                (Icon.check 48
+                , headers
+                    |> Element.text
+                    |> List.singleton
+                    |> List.append [Element.el
+                                        [ Element.Font.color Style.green ]
+                                        ( Element.text "Number of images : " )
+                                   ]
+                    |> Element.column [ Element.Font.size 16 ]
+                )
+
+            LoadError err ->
+                (Icon.slash 48
+                , err
+                    |> Element.text
+                    |> List.singleton
+                    |> List.append [Element.el
+                                        [ Element.Font.color Style.errorColor ]
+                                        ( Element.text "Errors occured while loading images : " )
+                                   ]
+                    |> Element.column [ Element.Font.size 16 ]
+                )
     in
     Element.el [ width fill, height fill ]
-        (Element.row [ centerX, centerY, spacing 64 ]
-            [ (Element.column [ centerX, centerY, spacing 32 ]
-                  [ Element.el (dropIconBorderAttributes borderStyle) (Icon.arrowDown 48)
-                  , dropOrLoadText
-                  , useDirectlyProvided
+        (Element.column [ centerX, centerY, spacing 32 ]
+            [ (Element.row
+                  [ centerX
+                  , centerY
+                  , spacing 32
+                  , Element.Border.width 2
+                  , borderStyle
+                  , Element.Border.color Style.lightGrey
+                  , padding 8
+                  ]
+                  [ Icon.image 48
+                  , Element.text "    "
+                  , (Element.column [ centerX, centerY, spacing 16 ]
+                        [ Element.el (dropIconBorderAttributes borderStyle) (Icon.arrowDown 48)
+                        , dropOrLoadText
+                        , useDirectlyProvided
+                        ]
+                    )
+                  , Element.text "    "
+                  , validationIcon
                   ]
               )
-            , case loadState of
-                LoadIdle -> Element.el [] (Icon.search 48)
-                LoadOk headers -> Element.el [] (Element.row [ centerX, centerY ] [ Icon.check 48, Element.text headers ])
-                LoadError err -> Element.el [] (Element.row [ centerX, centerY ] [ Icon.slash 48, Element.text err ])
+            , textElement
             ]
         )
 
@@ -3028,36 +3242,92 @@ lightsDropAndLoadArea draggingState loadState =
                 DraggingSomeLights ->
                     Element.Border.dashed
 
-        dropOrLoadText : Element Msg
-        dropOrLoadText =
-            Element.row [ centerX ]
-                [ Element.text "Drop lights or "
-                , Element.html
+        inputCsv : Element Msg
+        inputCsv = Element.html
                     (File.hiddenInputSingle
                         "TheCsvInput"
                         [ "text/csv" ]
                         (\file -> DragDropLightsMsg (DropLights file))
                     )
+
+        dropOrLoadText : Element Msg
+        dropOrLoadText =
+            Element.row [ centerX ]
+                [ Element.text "Drop "
+                , Element.el [Element.Font.extraBold, Element.Font.size 22, Element.Font.color Style.dropColor] (Element.text "lights")
+                , Element.text " or "
+                , inputCsv
                 , Element.el [ Element.Font.underline ]
                     (Element.html
                         (Html.label [ Html.Attributes.for "TheCsvInput", Html.Attributes.style "cursor" "pointer" ]
                             [ Html.text "load from disk" ]
                         )
                     )
+                , Element.text "   "
                 ]
+
+        -- ~~ clickButton : (Float -> Element Msg) -> Float -> Element Msg
+        -- ~~ clickButton icon size =
+        -- ~~     Element.row []
+        -- ~~         [ inputCsv
+        -- ~~         , Element.html (Html.label [ Html.Attributes.for "TheCsvInput", Html.Attributes.style "cursor" "pointer" ]
+        -- ~~             [ (Element.layout [] (icon size)) ]
+        -- ~~             )
+        -- ~~         ]
+
+        (validationIcon, textElement) = case loadState of
+            LoadIdle ->
+                (Icon.search 48, Element.none)
+
+            LoadOk headers ->
+                (Icon.check 48
+                , headers
+                    |> Element.text
+                    |> List.singleton
+                    |> List.append [Element.el
+                                        [ Element.Font.color Style.green ]
+                                        ( Element.text "Number of light vectors : " )
+                                   ]
+                    |> Element.column [ Element.Font.size 16 ]
+                )
+
+            LoadError err ->
+                (Icon.slash 48
+                , err
+                    |> Element.text
+                    |> List.singleton
+                    |> List.append [Element.el
+                                        [ Element.Font.color Style.errorColor ]
+                                        ( Element.text "Errors occured while loading csv file : " )
+                                   ]
+                    |> Element.column [ Element.Font.size 16 ]
+                )
     in
     Element.el [ width fill, height fill ]
-        (Element.row [ centerX, centerY, spacing 64 ]
-        [ (Element.column [ centerX, centerY, spacing 32 ]
-              [ Element.el (dropIconBorderAttributes borderStyle) (Icon.arrowDown 48)
-              , dropOrLoadText
-              ]
-          )
-        , case loadState of
-            LoadIdle -> Icon.search 48
-            LoadOk headers -> Element.row [ centerX, centerY ] [ Icon.check 48, Element.text headers ]
-            LoadError err -> Element.row [ centerX, centerY ] [ Icon.slash 48, Element.text err ]
-        ])
+        (Element.column [ centerX, centerY, spacing 32 ]
+            [ (Element.row
+                  [ centerX
+                  , centerY
+                  , spacing 32
+                  , Element.Border.width 2
+                  , borderStyle
+                  , Element.Border.color Style.lightGrey
+                  , padding 8
+                  ]
+                  [ Icon.sunset 48
+                  , Element.text "    "
+                  , (Element.column [ centerX, centerY, spacing 16 ]
+                        [ Element.el (dropIconBorderAttributes borderStyle) (Icon.arrowDown 48)
+                        , dropOrLoadText
+                        ]
+                    )
+                  , Element.text "    "
+                  , validationIcon
+                  ]
+              )
+            , textElement
+            ]
+        )
 
 
 dropIconBorderAttributes : Element.Attribute msg -> List (Element.Attribute msg)
@@ -3107,20 +3377,41 @@ borderTransition =
 
 onDropAttributes : List (Element.Attribute Msg)
 onDropAttributes =
+    let
+        extensionRegex : Regex.Regex
+        extensionRegex = Maybe.withDefault Regex.never <| Regex.fromString "*\\.csv"
+
+        extension : String -> Bool
+        extension fileName =
+            Regex.contains extensionRegex fileName
+    in
     List.map Element.htmlAttribute
         (File.onDrop
-            { onOver = \file otherFiles -> (case file.mime of
-                "text/csv" ->
+            -- /!\ Cannot work with file.mime string for onOver,
+            --     as it seems to always be "text/plain"
+            { onOver = \typ _ ->
+                if extension (Debug.log "name:" typ).name then
                     DragDropLightsMsg DragOverLights
-                _ ->
+                else
                     DragDropImagesMsg DragOverImages
-                )
-            , onDrop = \file otherFiles -> (case file.mime of
+                -- (case Debug.log "mime:" file.mime of
+                -- "text/csv" ->
+                --     DragDropLightsMsg DragOverLights
+                -- "text/plain" ->
+                --     DragDropLightsMsg DragOverLights
+                -- "image/*" ->
+                --     DragDropImagesMsg DragOverImages
+                -- _ ->
+                --     ClearLogs
+                -- )
+            , onDrop = \file otherFiles ->
+                (case file.mime of
                 "text/csv" ->
                     DragDropLightsMsg (DropLights file)
                 _ ->
                     DragDropImagesMsg (DropImages file otherFiles)
                 )
+            -- Bad conception : need to regroup all dragLeaves as we cant analyse the files being dragged on the screen.
             , onLeave = Just { id = "FileDropArea", msg = DragDropImagesMsg DragLeaveImages }
             }
         )
