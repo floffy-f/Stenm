@@ -55,15 +55,12 @@ async function run(params) {
   // Convert params to what is expected by the Rust code.
   const args = {
     config: {
-      lambda: params.lambda,
-      rho: params.rho,
       max_iterations: params.maxIterations,
       threshold: params.convergenceThreshold,
-      sparse_ratio_threshold: params.sparse,
-      levels: params.levels,
       verbosity: params.maxVerbosity,
+	  z_mean: params.z_mean,
+	  lights: params.lights
     },
-    equalize: 0.5,
     crop: params.crop,
   };
 
