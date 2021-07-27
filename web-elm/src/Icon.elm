@@ -1,4 +1,4 @@
-module Icon exposing (arrowDown, arrowLeftCircle, arrowRightCircle, boundingBox, check, fileText, github, image, maximize, move, search, slash, trash, zoomFit, zoomIn, zoomOut)
+module Icon exposing (arrowDown, arrowLeftCircle, arrowRightCircle, boundingBox, check, fileText, github, image, logIn, maximize, move, search, slash, sunset, trash, zoomFit, zoomIn, zoomOut)
 
 import Element exposing (Element)
 import FeatherIcons
@@ -86,6 +86,10 @@ check =
     featherIcon FeatherIcons.check
 
 
+logIn: Float -> Element msg
+logIn =
+    featherIcon FeatherIcons.logIn
+
 move : Float -> Element msg
 move =
     featherIcon FeatherIcons.move
@@ -97,6 +101,10 @@ search =
 slash : Float -> Element msg
 slash =
     featherIcon FeatherIcons.slash
+
+sunset : Float -> Element msg
+sunset =
+    featherIcon FeatherIcons.sunset
 
 trash : Float -> Element msg
 trash =
