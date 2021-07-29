@@ -2,8 +2,12 @@
   // pkg/stenm_wasm.js
   var import_meta = {};
   var wasm;
-  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
-  cachedTextDecoder.decode();
+  var heap = new Array(32).fill(void 0);
+  heap.push(void 0, null, true, false);
+  function getObject(idx) {
+    return heap[idx];
+  }
+  var WASM_VECTOR_LEN = 0;
   var cachegetUint8Memory0 = null;
   function getUint8Memory0() {
     if (cachegetUint8Memory0 === null || cachegetUint8Memory0.buffer !== wasm.memory.buffer) {
@@ -11,24 +15,6 @@
     }
     return cachegetUint8Memory0;
   }
-  function getStringFromWasm0(ptr, len) {
-    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
-  }
-  var heap = new Array(32).fill(void 0);
-  heap.push(void 0, null, true, false);
-  var heap_next = heap.length;
-  function addHeapObject(obj) {
-    if (heap_next === heap.length)
-      heap.push(heap.length + 1);
-    const idx = heap_next;
-    heap_next = heap[idx];
-    heap[idx] = obj;
-    return idx;
-  }
-  function getObject(idx) {
-    return heap[idx];
-  }
-  var WASM_VECTOR_LEN = 0;
   var cachedTextEncoder = new TextEncoder("utf-8");
   var encodeString = typeof cachedTextEncoder.encodeInto === "function" ? function(arg, view) {
     return cachedTextEncoder.encodeInto(arg, view);
@@ -77,6 +63,7 @@
     }
     return cachegetInt32Memory0;
   }
+  var heap_next = heap.length;
   function dropObject(idx) {
     if (idx < 36)
       return;
@@ -88,61 +75,18 @@
     dropObject(idx);
     return ret;
   }
-  function debugString(val) {
-    const type = typeof val;
-    if (type == "number" || type == "boolean" || val == null) {
-      return `${val}`;
-    }
-    if (type == "string") {
-      return `"${val}"`;
-    }
-    if (type == "symbol") {
-      const description = val.description;
-      if (description == null) {
-        return "Symbol";
-      } else {
-        return `Symbol(${description})`;
-      }
-    }
-    if (type == "function") {
-      const name = val.name;
-      if (typeof name == "string" && name.length > 0) {
-        return `Function(${name})`;
-      } else {
-        return "Function";
-      }
-    }
-    if (Array.isArray(val)) {
-      const length = val.length;
-      let debug = "[";
-      if (length > 0) {
-        debug += debugString(val[0]);
-      }
-      for (let i = 1; i < length; i++) {
-        debug += ", " + debugString(val[i]);
-      }
-      debug += "]";
-      return debug;
-    }
-    const builtInMatches = /\[object ([^\]]+)\]/.exec(toString.call(val));
-    let className;
-    if (builtInMatches.length > 1) {
-      className = builtInMatches[1];
-    } else {
-      return toString.call(val);
-    }
-    if (className == "Object") {
-      try {
-        return "Object(" + JSON.stringify(val) + ")";
-      } catch (_) {
-        return "Object";
-      }
-    }
-    if (val instanceof Error) {
-      return `${val.name}: ${val.message}
-${val.stack}`;
-    }
-    return className;
+  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
+  cachedTextDecoder.decode();
+  function getStringFromWasm0(ptr, len) {
+    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
+  }
+  function addHeapObject(obj) {
+    if (heap_next === heap.length)
+      heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+    heap[idx] = obj;
+    return idx;
   }
   function makeMutClosure(arg0, arg1, dtor, f) {
     const state = { a: arg0, b: arg1, cnt: 1, dtor };
@@ -163,7 +107,7 @@ ${val.stack}`;
     real.original = state;
     return real;
   }
-  function __wbg_adapter_20(arg0, arg1, arg2) {
+  function __wbg_adapter_16(arg0, arg1, arg2) {
     wasm._dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h0fad0911a14fabff(arg0, arg1, addHeapObject(arg2));
   }
   function passArray8ToWasm0(arg, malloc) {
@@ -184,7 +128,7 @@ ${val.stack}`;
       }
     };
   }
-  function __wbg_adapter_41(arg0, arg1, arg2, arg3) {
+  function __wbg_adapter_42(arg0, arg1, arg2, arg3) {
     wasm.wasm_bindgen__convert__closures__invoke2_mut__h8777040fa8ea93b6(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
   }
   var Stenm = class {
@@ -213,6 +157,9 @@ ${val.stack}`;
       var len1 = WASM_VECTOR_LEN;
       wasm.stenm_load(this.ptr, ptr0, len0, ptr1, len1);
     }
+    push_light(x, y, z) {
+      wasm.stenm_push_light(this.ptr, x, y, z);
+    }
     run(params) {
       var ret = wasm.stenm_run(this.ptr, addHeapObject(params));
       return takeObject(ret);
@@ -221,10 +168,10 @@ ${val.stack}`;
       var ret = wasm.stenm_image_ids(this.ptr);
       return takeObject(ret);
     }
-    cropped_img_file(i) {
+    normal_map() {
       try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.stenm_cropped_img_file(retptr, this.ptr, i);
+        wasm.stenm_normal_map(retptr, this.ptr);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v0 = getArrayU8FromWasm0(r0, r1).slice();
@@ -234,10 +181,10 @@ ${val.stack}`;
         wasm.__wbindgen_add_to_stack_pointer(16);
       }
     }
-    register_and_save(i) {
+    register_and_save() {
       try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.stenm_register_and_save(retptr, this.ptr, i);
+        wasm.stenm_register_and_save(retptr, this.ptr);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v0 = getArrayU8FromWasm0(r0, r1).slice();
@@ -278,13 +225,6 @@ ${val.stack}`;
     }
     const imports = {};
     imports.wbg = {};
-    imports.wbg.__wbg_log_f7c237618bada41f = function(arg0, arg1) {
-      console.log(getStringFromWasm0(arg0, arg1));
-    };
-    imports.wbg.__wbindgen_json_parse = function(arg0, arg1) {
-      var ret = JSON.parse(getStringFromWasm0(arg0, arg1));
-      return addHeapObject(ret);
-    };
     imports.wbg.__wbindgen_json_serialize = function(arg0, arg1) {
       const obj = getObject(arg1);
       var ret = JSON.stringify(obj === void 0 ? null : obj);
@@ -296,6 +236,20 @@ ${val.stack}`;
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
       takeObject(arg0);
     };
+    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
+      var ret = getStringFromWasm0(arg0, arg1);
+      return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_log_f7c237618bada41f = function(arg0, arg1) {
+      console.log(getStringFromWasm0(arg0, arg1));
+    };
+    imports.wbg.__wbindgen_json_parse = function(arg0, arg1) {
+      var ret = JSON.parse(getStringFromWasm0(arg0, arg1));
+      return addHeapObject(ret);
+    };
+    imports.wbg.__wbg_appLog_21c4f8183421fc75 = function(arg0, arg1, arg2) {
+      appLog(arg0 >>> 0, getStringFromWasm0(arg1, arg2));
+    };
     imports.wbg.__wbindgen_cb_drop = function(arg0) {
       const obj = takeObject(arg0).original;
       if (obj.cnt-- == 1) {
@@ -304,17 +258,6 @@ ${val.stack}`;
       }
       var ret = false;
       return ret;
-    };
-    imports.wbg.__wbg_appLog_21c4f8183421fc75 = function(arg0, arg1, arg2) {
-      appLog(arg0 >>> 0, getStringFromWasm0(arg1, arg2));
-    };
-    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
-      var ret = getStringFromWasm0(arg0, arg1);
-      return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_shouldStop_93933a126006f0cb = function(arg0, arg1, arg2, arg3) {
-      var ret = shouldStop(getStringFromWasm0(arg0, arg1), arg2 === 0 ? void 0 : arg3 >>> 0);
-      return addHeapObject(ret);
     };
     imports.wbg.__wbg_call_f5e0576f61ee7461 = handleError(function(arg0, arg1, arg2) {
       var ret = getObject(arg0).call(getObject(arg1), getObject(arg2));
@@ -327,7 +270,7 @@ ${val.stack}`;
           const a = state0.a;
           state0.a = 0;
           try {
-            return __wbg_adapter_41(a, state0.b, arg02, arg12);
+            return __wbg_adapter_42(a, state0.b, arg02, arg12);
           } finally {
             state0.a = a;
           }
@@ -344,10 +287,6 @@ ${val.stack}`;
     };
     imports.wbg.__wbg_then_367b3e718069cfb9 = function(arg0, arg1) {
       var ret = getObject(arg0).then(getObject(arg1));
-      return addHeapObject(ret);
-    };
-    imports.wbg.__wbg_then_ac66ca61394bfd21 = function(arg0, arg1, arg2) {
-      var ret = getObject(arg0).then(getObject(arg1), getObject(arg2));
       return addHeapObject(ret);
     };
     imports.wbg.__wbg_new_59cb74e423758ede = function() {
@@ -368,26 +307,14 @@ ${val.stack}`;
         wasm.__wbindgen_free(arg0, arg1);
       }
     };
-    imports.wbg.__wbindgen_boolean_get = function(arg0) {
-      const v = getObject(arg0);
-      var ret = typeof v === "boolean" ? v ? 1 : 0 : 2;
-      return ret;
-    };
-    imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
-      var ret = debugString(getObject(arg1));
-      var ptr0 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      var len0 = WASM_VECTOR_LEN;
-      getInt32Memory0()[arg0 / 4 + 1] = len0;
-      getInt32Memory0()[arg0 / 4 + 0] = ptr0;
-    };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
       throw new Error(getStringFromWasm0(arg0, arg1));
     };
     imports.wbg.__wbindgen_rethrow = function(arg0) {
       throw takeObject(arg0);
     };
-    imports.wbg.__wbindgen_closure_wrapper478 = function(arg0, arg1, arg2) {
-      var ret = makeMutClosure(arg0, arg1, 244, __wbg_adapter_20);
+    imports.wbg.__wbindgen_closure_wrapper323 = function(arg0, arg1, arg2) {
+      var ret = makeMutClosure(arg0, arg1, 148, __wbg_adapter_16);
       return addHeapObject(ret);
     };
     if (typeof input === "string" || typeof Request === "function" && input instanceof Request || typeof URL === "function" && input instanceof URL) {
@@ -430,52 +357,39 @@ ${val.stack}`;
   }
   async function run(params) {
     console.log("worker running with parameters:", params);
+    const lights = params.lights;
+    for (const light of lights) {
+      Stenm2.push_light(light.x, light.y, light.z);
+    }
     const args = {
       config: {
-        lambda: params.lambda,
-        rho: params.rho,
         max_iterations: params.maxIterations,
         threshold: params.convergenceThreshold,
-        sparse_ratio_threshold: params.sparse,
-        levels: params.levels,
-        verbosity: params.maxVerbosity
+        verbosity: params.maxVerbosity,
+        z_mean: params.z_mean
       },
-      equalize: 0.5,
       crop: params.crop
     };
     stopOrder = false;
     let motion = await Stenm2.run(args);
     const image_ids = Stenm2.image_ids();
     const imgCount = image_ids.length;
-    console.log(`Encoding ${imgCount} cropped aligned images:`);
-    for (let i = 0; i < imgCount; i++) {
-      await shouldStop("encoding", i);
-      const id = image_ids[i];
-      console.log("   Encoding ", id, " ...");
-      let croppedImgArrayU8 = Stenm2.cropped_img_file(i);
-      postMessage({
-        type: "cropped-image",
-        data: { id, arrayBuffer: croppedImgArrayU8.buffer, imgCount }
-      }, [croppedImgArrayU8.buffer]);
-    }
+    console.log(`Encoding normal map:`);
+    let NMu8 = Stenm2.normal_map();
+    postMessage({
+      type: "cropped-image",
+      data: { id: "n_map", arrayBuffer: NMu8.buffer, imgCount: 1 }
+    }, [NMu8.buffer]);
     await shouldStop("done", null);
   }
   async function warpEncode({ imgCount }) {
     stopOrder = false;
     console.log("Warping and encoding registered images");
-    for (let i = 0; i < imgCount; i++) {
-      if (await shouldStop("saving", i)) {
-        appLog(0, "Saving stopped by user");
-        await shouldStop("done", null);
-        break;
-      }
-      let imgArrayU8 = Stenm2.register_and_save(i);
-      postMessage({
-        type: "registered-image",
-        data: { index: i, arrayBuffer: imgArrayU8.buffer, imgCount }
-      }, [imgArrayU8.buffer]);
-    }
-    await shouldStop("done", null);
+    let imgArrayU8 = Stenm2.register_and_save();
+    postMessage({
+      type: "registered-image",
+      data: { index: "normal-map", arrayBuffer: imgArrayU8.buffer, imgCount: 1 }
+    }, [imgArrayU8.buffer]);
   }
   function appLog(lvl, content) {
     postMessage({ type: "log", data: { lvl, content } });

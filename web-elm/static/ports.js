@@ -13,6 +13,7 @@ export function activatePorts(app, containerSize) {
   // Global variable holding image ids
   let croppedImages = [];
   let registeredImages = [];
+  let nb_images = 0;
 
   // Listen to worker messages.
   worker.onmessage = async function (event) {
@@ -30,7 +31,7 @@ export function activatePorts(app, containerSize) {
       const decodedCropped = await utils.decodeImage(url);
       croppedImages.push({ id, img: decodedCropped });
       if (croppedImages.length == imgCount) {
-        console.log(`Registration done, there are ${imgCount} cropped images.`);
+        console.log(`Normal map computed, sending through port`);
         app.ports.receiveCroppedImages.send(croppedImages);
       }
     } else if (event.data.type == "registered-image") {
@@ -41,7 +42,7 @@ export function activatePorts(app, containerSize) {
       if (registeredImages.length == imgCount) {
         console.log(`Warping and encoding of all ${imgCount} images done.`);
         for (let i = 0; i < imgCount; i++) {
-          utils.download(registeredImages[i], `${i}.png`, "image/png");
+          utils.download(registeredImages[i], `normal_map_for_${nb_images}.png`, "image/png");
         }
         console.log("All images downloaded!");
       }
@@ -59,12 +60,14 @@ export function activatePorts(app, containerSize) {
   app.ports.decodeImages.subscribe(async (imgs) => {
     console.log("Received images to decode");
     try {
+	  nb_images = 0;
       for (let img of imgs) {
         const url = URL.createObjectURL(img);
         worker.postMessage({
           type: "decode-image",
           data: { id: img.name, url },
         });
+		nb_images += 1;
       }
     } catch (error) {
       console.error(error);
