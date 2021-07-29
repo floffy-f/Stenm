@@ -19,6 +19,16 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "serde")]
 use serde::Deserialize;
 
+/// 3D point, representing a 3D light direction
+#[cfg_attr(feature = "wasm_bindgen", wasm_bindgen)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
+pub struct Point3d {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
 /// Configuration (parameters) of the registration algorithm.
 #[cfg_attr(feature = "wasm-bindgen", wasm_bindgen)]
 #[derive(Debug, Clone, Copy)]
