@@ -106,7 +106,7 @@ export function activatePorts(app, containerSize) {
   });
 
   // Save registered images.
-  app.ports.saveRegisteredImages.subscribe(async (imgCount) => {
+  app.ports.saveNMapPNG.subscribe(async (imgCount) => {
     registeredImages.length = 0; // reset associated registered images
     worker.postMessage({ type: "warp-encode", data: { imgCount } });
   });
