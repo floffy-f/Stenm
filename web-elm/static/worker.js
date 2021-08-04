@@ -7,7 +7,20 @@
   function getObject(idx) {
     return heap[idx];
   }
-  var WASM_VECTOR_LEN = 0;
+  var heap_next = heap.length;
+  function dropObject(idx) {
+    if (idx < 36)
+      return;
+    heap[idx] = heap_next;
+    heap_next = idx;
+  }
+  function takeObject(idx) {
+    const ret = getObject(idx);
+    dropObject(idx);
+    return ret;
+  }
+  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
+  cachedTextDecoder.decode();
   var cachegetUint8Memory0 = null;
   function getUint8Memory0() {
     if (cachegetUint8Memory0 === null || cachegetUint8Memory0.buffer !== wasm.memory.buffer) {
@@ -15,6 +28,18 @@
     }
     return cachegetUint8Memory0;
   }
+  function getStringFromWasm0(ptr, len) {
+    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
+  }
+  function addHeapObject(obj) {
+    if (heap_next === heap.length)
+      heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+    heap[idx] = obj;
+    return idx;
+  }
+  var WASM_VECTOR_LEN = 0;
   var cachedTextEncoder = new TextEncoder("utf-8");
   var encodeString = typeof cachedTextEncoder.encodeInto === "function" ? function(arg, view) {
     return cachedTextEncoder.encodeInto(arg, view);
@@ -63,31 +88,6 @@
     }
     return cachegetInt32Memory0;
   }
-  var heap_next = heap.length;
-  function dropObject(idx) {
-    if (idx < 36)
-      return;
-    heap[idx] = heap_next;
-    heap_next = idx;
-  }
-  function takeObject(idx) {
-    const ret = getObject(idx);
-    dropObject(idx);
-    return ret;
-  }
-  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
-  cachedTextDecoder.decode();
-  function getStringFromWasm0(ptr, len) {
-    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
-  }
-  function addHeapObject(obj) {
-    if (heap_next === heap.length)
-      heap.push(heap.length + 1);
-    const idx = heap_next;
-    heap_next = heap[idx];
-    heap[idx] = obj;
-    return idx;
-  }
   function makeMutClosure(arg0, arg1, dtor, f) {
     const state = { a: arg0, b: arg1, cnt: 1, dtor };
     const real = (...args) => {
@@ -108,7 +108,7 @@
     return real;
   }
   function __wbg_adapter_16(arg0, arg1, arg2) {
-    wasm._dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h0fad0911a14fabff(arg0, arg1, addHeapObject(arg2));
+    wasm._dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h5a4cda7d0e3c3300(arg0, arg1, addHeapObject(arg2));
   }
   function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1);
@@ -128,8 +128,8 @@
       }
     };
   }
-  function __wbg_adapter_42(arg0, arg1, arg2, arg3) {
-    wasm.wasm_bindgen__convert__closures__invoke2_mut__h8777040fa8ea93b6(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
+  function __wbg_adapter_40(arg0, arg1, arg2, arg3) {
+    wasm.wasm_bindgen__convert__closures__invoke2_mut__hdb16749cba9d9e2d(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
   }
   var Stenm = class {
     static __wrap(ptr) {
@@ -225,14 +225,6 @@
     }
     const imports = {};
     imports.wbg = {};
-    imports.wbg.__wbindgen_json_serialize = function(arg0, arg1) {
-      const obj = getObject(arg1);
-      var ret = JSON.stringify(obj === void 0 ? null : obj);
-      var ptr0 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      var len0 = WASM_VECTOR_LEN;
-      getInt32Memory0()[arg0 / 4 + 1] = len0;
-      getInt32Memory0()[arg0 / 4 + 0] = ptr0;
-    };
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
       takeObject(arg0);
     };
@@ -240,8 +232,13 @@
       var ret = getStringFromWasm0(arg0, arg1);
       return addHeapObject(ret);
     };
-    imports.wbg.__wbg_log_f7c237618bada41f = function(arg0, arg1) {
-      console.log(getStringFromWasm0(arg0, arg1));
+    imports.wbg.__wbindgen_json_serialize = function(arg0, arg1) {
+      const obj = getObject(arg1);
+      var ret = JSON.stringify(obj === void 0 ? null : obj);
+      var ptr0 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+      var len0 = WASM_VECTOR_LEN;
+      getInt32Memory0()[arg0 / 4 + 1] = len0;
+      getInt32Memory0()[arg0 / 4 + 0] = ptr0;
     };
     imports.wbg.__wbindgen_json_parse = function(arg0, arg1) {
       var ret = JSON.parse(getStringFromWasm0(arg0, arg1));
@@ -270,7 +267,7 @@
           const a = state0.a;
           state0.a = 0;
           try {
-            return __wbg_adapter_42(a, state0.b, arg02, arg12);
+            return __wbg_adapter_40(a, state0.b, arg02, arg12);
           } finally {
             state0.a = a;
           }
@@ -313,8 +310,8 @@
     imports.wbg.__wbindgen_rethrow = function(arg0) {
       throw takeObject(arg0);
     };
-    imports.wbg.__wbindgen_closure_wrapper323 = function(arg0, arg1, arg2) {
-      var ret = makeMutClosure(arg0, arg1, 148, __wbg_adapter_16);
+    imports.wbg.__wbindgen_closure_wrapper366 = function(arg0, arg1, arg2) {
+      var ret = makeMutClosure(arg0, arg1, 171, __wbg_adapter_16);
       return addHeapObject(ret);
     };
     if (typeof input === "string" || typeof Request === "function" && input instanceof Request || typeof URL === "function" && input instanceof URL) {

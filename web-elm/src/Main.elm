@@ -1841,16 +1841,16 @@ progressMessage model =
             "Building multi-resolution pyramid"
 
         StepLevel level ->
-            "Registering at level " ++ String.fromInt level
+            "Nmaping at level " ++ String.fromInt level
 
         StepIteration level iter ->
-            "Registering at level " ++ String.fromInt level ++ "    iteration " ++ String.fromInt iter ++ " / " ++ String.fromInt model.params.maxIterations
+            "Nmaping at level " ++ String.fromInt level ++ "    iteration " ++ String.fromInt iter ++ " / " ++ String.fromInt model.params.maxIterations
 
         StepApplying img ->
             "Applying warp to cropped image " ++ String.fromInt img ++ " / " ++ String.fromInt model.imagesCount
 
         StepEncoding img ->
-            "Encoding registered cropped image " ++ String.fromInt img ++ " / " ++ String.fromInt model.imagesCount
+            "Encoding nmaped cropped image " ++ String.fromInt img ++ " / " ++ String.fromInt model.imagesCount
 
         StepDone ->
             ""
@@ -1894,7 +1894,7 @@ progressMessage model =
 --         StepApplying img ->
 --             0.8 + 0.1 * subprogress img model.imagesCount
 -- 
---         -- Say 90% to 100% for encoding the registered cropped images
+--         -- Say 90% to 100% for encoding the nmaped cropped images
 --         StepEncoding img ->
 --             0.9 + 0.1 * subprogress img model.imagesCount
 -- 
