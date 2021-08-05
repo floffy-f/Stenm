@@ -16,6 +16,8 @@ stenm = { path = "../stenm-lib", features = ["wasm-bindgen", "serde"] }
 anyhow = "1.0.38" # error handling in the main program
 glob = "0.3.0"
 nalgebra = "0.25.1"
+nalgebra_new = { package = "nalgebra", version = "0.28.0"}
+nalgebra-sparse = "0.4.0"
 image = { version = "0.23.14", default-features = false, features = ["jpeg", "png"] }
 log = { version = "0.4.14", default-features = false, features = ["std"] }
 wasm-bindgen = { version = "0.2.73", features = ["serde-serialize"] }

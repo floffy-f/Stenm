@@ -19,8 +19,7 @@
     dropObject(idx);
     return ret;
   }
-  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
-  cachedTextDecoder.decode();
+  var WASM_VECTOR_LEN = 0;
   var cachegetUint8Memory0 = null;
   function getUint8Memory0() {
     if (cachegetUint8Memory0 === null || cachegetUint8Memory0.buffer !== wasm.memory.buffer) {
@@ -28,18 +27,6 @@
     }
     return cachegetUint8Memory0;
   }
-  function getStringFromWasm0(ptr, len) {
-    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
-  }
-  function addHeapObject(obj) {
-    if (heap_next === heap.length)
-      heap.push(heap.length + 1);
-    const idx = heap_next;
-    heap_next = heap[idx];
-    heap[idx] = obj;
-    return idx;
-  }
-  var WASM_VECTOR_LEN = 0;
   var cachedTextEncoder = new TextEncoder("utf-8");
   var encodeString = typeof cachedTextEncoder.encodeInto === "function" ? function(arg, view) {
     return cachedTextEncoder.encodeInto(arg, view);
@@ -88,6 +75,19 @@
     }
     return cachegetInt32Memory0;
   }
+  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
+  cachedTextDecoder.decode();
+  function getStringFromWasm0(ptr, len) {
+    return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
+  }
+  function addHeapObject(obj) {
+    if (heap_next === heap.length)
+      heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+    heap[idx] = obj;
+    return idx;
+  }
   function makeMutClosure(arg0, arg1, dtor, f) {
     const state = { a: arg0, b: arg1, cnt: 1, dtor };
     const real = (...args) => {
@@ -128,7 +128,7 @@
       }
     };
   }
-  function __wbg_adapter_40(arg0, arg1, arg2, arg3) {
+  function __wbg_adapter_41(arg0, arg1, arg2, arg3) {
     wasm.wasm_bindgen__convert__closures__invoke2_mut__hdb16749cba9d9e2d(arg0, arg1, addHeapObject(arg2), addHeapObject(arg3));
   }
   var Stenm = class {
@@ -172,6 +172,19 @@
       try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         wasm.stenm_normal_map(retptr, this.ptr);
+        var r0 = getInt32Memory0()[retptr / 4 + 0];
+        var r1 = getInt32Memory0()[retptr / 4 + 1];
+        var v0 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_free(r0, r1 * 1);
+        return v0;
+      } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+      }
+    }
+    height_map() {
+      try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.stenm_height_map(retptr, this.ptr);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v0 = getArrayU8FromWasm0(r0, r1).slice();
@@ -228,10 +241,6 @@
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
       takeObject(arg0);
     };
-    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
-      var ret = getStringFromWasm0(arg0, arg1);
-      return addHeapObject(ret);
-    };
     imports.wbg.__wbindgen_json_serialize = function(arg0, arg1) {
       const obj = getObject(arg1);
       var ret = JSON.stringify(obj === void 0 ? null : obj);
@@ -239,6 +248,10 @@
       var len0 = WASM_VECTOR_LEN;
       getInt32Memory0()[arg0 / 4 + 1] = len0;
       getInt32Memory0()[arg0 / 4 + 0] = ptr0;
+    };
+    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
+      var ret = getStringFromWasm0(arg0, arg1);
+      return addHeapObject(ret);
     };
     imports.wbg.__wbindgen_json_parse = function(arg0, arg1) {
       var ret = JSON.parse(getStringFromWasm0(arg0, arg1));
@@ -267,7 +280,7 @@
           const a = state0.a;
           state0.a = 0;
           try {
-            return __wbg_adapter_40(a, state0.b, arg02, arg12);
+            return __wbg_adapter_41(a, state0.b, arg02, arg12);
           } finally {
             state0.a = a;
           }
@@ -310,7 +323,7 @@
     imports.wbg.__wbindgen_rethrow = function(arg0) {
       throw takeObject(arg0);
     };
-    imports.wbg.__wbindgen_closure_wrapper366 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper361 = function(arg0, arg1, arg2) {
       var ret = makeMutClosure(arg0, arg1, 171, __wbg_adapter_16);
       return addHeapObject(ret);
     };
@@ -372,7 +385,7 @@
     const image_ids = Stenm2.image_ids();
     const imgCount = image_ids.length;
     console.log(`Encoding normal map:`);
-    let NMu8 = Stenm2.normal_map();
+    let NMu8 = Stenm2.height_map();
     postMessage({
       type: "cropped-image",
       data: { id: "n_map", arrayBuffer: NMu8.buffer, imgCount: 1 }

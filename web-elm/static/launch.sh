@@ -9,7 +9,7 @@ echo
 echo "Build elm module"
 elm make src/Main.elm --output=static/Elm.js --optimize | sed 's/^/--  /'
 
-cd ../select-ball-wasm/
+cd ../stenm-wasm/
 echo
 echo "Build wasm"
 wasm-pack build --target web -- --features console_error_panic_hook | sed 's/^/--  /'

@@ -9,6 +9,7 @@
 pub mod camera;
 pub mod filter;
 pub mod gradients;
+pub mod height_map;
 pub mod interop;
 pub mod interpolation;
 pub mod main;
