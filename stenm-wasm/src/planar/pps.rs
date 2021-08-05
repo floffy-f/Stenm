@@ -16,7 +16,7 @@ type Mat3D = DMatrix<(f32, f32, f32)>;
 
 /// Configuration (parameters) of the photometric stereo algorithm.
 #[derive(Debug)]
-pub struct Config_pps {
+pub struct ConfigPps {
     pub max_iterations: usize,
     pub threshold: f32,
     pub z_mean: f32,
@@ -28,7 +28,7 @@ pub struct Config_pps {
 /// with different lighting conditions.
 /// Returns (xyz, normals, albedo)
 pub fn photometric_stereo(
-    config: Config_pps,
+    config: ConfigPps,
     raw_images: &[DMatrix<f32>], // f32 in [0,1]
 ) -> Result<(Mat3D, Mat3D, DMatrix<f32>), anyhow::Error> {
     // eprintln!("lights: {:#?}", config.lights);
@@ -67,6 +67,7 @@ pub fn photometric_stereo(
         images: &imgs_matrix, // nb_imgs x nb_pixels matrix
         lights_directions: &lights_directions_matrix, // S : nb_imgs x 3
     };
+    log::trace!("Launch semicalibrated_ps");
     let (normals, albedo, lights_intensities) = semicalibrated_ps(&config, &obs);
 
     // TODO: TEMP to visualize normals and albedo to check we didn't introduce a mistake.
@@ -75,6 +76,7 @@ pub fn photometric_stereo(
         obs.image_shape.1,
         normals.column_iter().map(|c| (c.x, c.y, c.z)),
     );
+    log::trace!("...normals have been cloned");
     return Ok((normals.clone(), normals, albedo));
 
     // % Perspective normal integration into a depth map
@@ -158,7 +160,7 @@ fn save_matrix<P: AsRef<Path>>(img: &DMatrix<f32>, path: P) {
 
 // let (normals, albedo, lights_intensities) = semicalibrated_ps(&config, &obs);
 fn semicalibrated_ps(
-    config: &Config_pps,
+    config: &ConfigPps,
     obs: &Obs,
 ) -> (MatrixMN<f32, U3, Dynamic>, DMatrix<f32>, DVector<f32>) {
     // Initialize the normals.

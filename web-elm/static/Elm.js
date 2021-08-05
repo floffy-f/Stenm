@@ -17578,17 +17578,17 @@ var $author$project$Main$progressMessage = function (model) {
 			return 'Building multi-resolution pyramid';
 		case 2:
 			var level = _v0.a;
-			return 'Registering at level ' + $elm$core$String$fromInt(level);
+			return 'Nmaping at level ' + $elm$core$String$fromInt(level);
 		case 3:
 			var level = _v0.a;
 			var iter = _v0.b;
-			return 'Registering at level ' + ($elm$core$String$fromInt(level) + ('    iteration ' + ($elm$core$String$fromInt(iter) + (' / ' + $elm$core$String$fromInt(model.i.m)))));
+			return 'Nmaping at level ' + ($elm$core$String$fromInt(level) + ('    iteration ' + ($elm$core$String$fromInt(iter) + (' / ' + $elm$core$String$fromInt(model.i.m)))));
 		case 4:
 			var img = _v0.a;
 			return 'Applying warp to cropped image ' + ($elm$core$String$fromInt(img) + (' / ' + $elm$core$String$fromInt(model.aq)));
 		case 5:
 			var img = _v0.a;
-			return 'Encoding registered cropped image ' + ($elm$core$String$fromInt(img) + (' / ' + $elm$core$String$fromInt(model.aq)));
+			return 'Encoding nmaped cropped image ' + ($elm$core$String$fromInt(img) + (' / ' + $elm$core$String$fromInt(model.aq)));
 		case 6:
 			return '';
 		default:

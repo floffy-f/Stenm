@@ -77,7 +77,7 @@ async function run(params) {
   const image_ids = Stenm.image_ids();
   const imgCount = image_ids.length;
   console.log(`Encoding normal map:`);
-  let NMu8 = Stenm.normal_map();
+  let NMu8 = Stenm.height_map();
   postMessage(
 	{
 	  type: "cropped-image",

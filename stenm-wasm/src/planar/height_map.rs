@@ -1,183 +1,145 @@
 //! Computation of height map from normal map
 
 use anyhow::anyhow;
-use nalgebra::DMatrix;
-use nalgebra_sparse::{CooMatrix, CsrMatrix};
+use nalgebra_new::DMatrix;
+use nalgebra_sparse::{
+    coo::CooMatrix,
+    csc::CscMatrix,
+    factorization::{CholeskyError, CscCholesky},
+};
 
-enum StorageStyle {
-    HStack,
-    VStack,
-}
+/// Solve Au = b with b the flattened divergence of the gradient map,
+/// and A the finite difference Laplacian matrix.
+/// We flatten the maps column-wise
+pub fn solve_for_nmap(
+    nmap: &DMatrix<(f32, f32, f32)>,
+) -> Result<(DMatrix<f32>, DMatrix<f32>), anyhow::Error> {
+    // lap(u) = div(g)
+    let (n, m) = nmap.shape();
+    let nb_pix: usize = n * m;
+    log::info!("Begining computations of div_g");
+    let div_g: DMatrix<f32> = DMatrix::from_fn(n, m, |i, j| {
+        // i, j € [0, n-1]x[0, m-1]
+        let (gradx_left, _grady_left) = {
+            let (nx, ny, nz) = if i > 0 {
+                nmap[(i - 1, j)]
+            } else {
+                (0.0, 0.0, -1.0)
+            };
+            (-nx / nz, -ny / nz)
+        };
+        let (gradx_right, _grady_right) = {
+            let (nx, ny, nz) = if i < n - 1 {
+                nmap[(i + 1, j)]
+            } else {
+                (0.0, 0.0, -1.0)
+            };
+            (-nx / nz, -ny / nz)
+        };
+        let (_gradx_top, grady_top) = {
+            let (nx, ny, nz) = if j > 0 {
+                nmap[(i, j - 1)]
+            } else {
+                (0.0, 0.0, -1.0)
+            };
+            (-nx / nz, -ny / nz)
+        };
+        let (_gradx_bottom, grady_bottom) = {
+            let (nx, ny, nz) = if j < m - 1 {
+                nmap[(i, j + 1)]
+            } else {
+                (0.0, 0.0, -1.0)
+            };
+            (-nx / nz, -ny / nz)
+        };
+        // Centered finite differences for div(nmap):
+        //         (-0.5)
+        //            |
+        // (-0.5) _ (0.0) _ (0.5)
+        //            |
+        //          (0.5)
+        let div: f32 = -0.5 * gradx_left + 0.5 * gradx_right - 0.5 * grady_top + 0.5 * grady_bottom;
+        div
+    });
+    log::info!("...\n...");
 
-fn mat2vec(mat: &DMatrix<T>, store: StorageStyle) -> Vec<T> {
-    match store {
-        HStack => mat.iter().collect(),
-        VStack => mat.row_iter().collect(),
-    }
-}
+    let mut rhs: DMatrix<f32> = DMatrix::from_column_slice(nb_pix, 1, div_g.as_slice());
+    log::info!("Ending computations of div_g");
 
-fn vec2mat(vec: &Vec<T>, nb_line: usize, nb_col: usize, store: StorageStyle) -> DMatrix<T> {
-    match store {
-        HStack => DMatrix::from_iterator(nb_line, nb_col, vec.into_iter()),
-        VStack => DMatrix::from_iterator(nb_line, nb_col, vec.into_iter()).transpose(),
-    }
-}
-
-fn sub2ind(
-    nb_line: usize,
-    nb_col: usize,
-    i: usize,
-    j: usize,
-    store: StorageStyle,
-) -> Result<usize, anyhow::Error> {
-    if i >= nb_line {
-        return Err(anyhow!("Line number too big"));
-    }
-    if j >= nb_col {
-        return Err(anyhow!("Column number too big"));
-    }
-    Ok(match store {
-        HStack => j * nb_line + i,
-        CStack => i * nb_col + j,
-    })
-}
-
-fn ind2sub(
-    nb_line: usize,
-    nb_col: usize,
-    k: usize,
-    store: StorageStyle,
-) -> Result<(usize, usize), anyhow::Error> {
-    if k >= nb_line * nb_col {
-        return Err(anyhow!("Index to convert to array position too big"));
-    }
-    Ok(match store {
-        HStack => (k % nb_line, k / nb_line),
-        VStack => (k / nb_col, k % nb_line),
-    })
-}
-
-fn add_lc_term(
-    x0: usize,
-    y0: usize,
-    x: usize,
-    y: usize,
-    coef: f32,
-    nb_line: usize,
-    nb_col: usize,
-    store: StorageStyle,
-) -> Result<(usize, usize, f32), anyhow::Error> {
-    let target: usize = match sub2ind(nb_line, nb_col, x0, y0, store) {
-        Err(e) => return Err(e),
-        Ok(t) => t,
-    };
-    let source: usize = match sub2ind(nb_line, nb_col, x, y, store) {
-        Err(e) => return Err(e),
-        Ok(s) => s,
-    };
-    Ok((target, source, coef))
-}
-
-fn build_sparse(
-    rows: &Vec<usize>,
-    cols: &Vec<usize>,
-    values: &Vec<usize>,
-    to_be_added: Result<(usize, usize, f32), anyhow::Error>,
-) -> () {
-    match to_be_added {
-        Err(e) => (),
-        Ok(res) => {
-            rows.push(res.0);
-            cols.push(res.1);
-            values.push(res.2);
-            ()
+    let mut laplacian = CooMatrix::new(nb_pix, nb_pix);
+    laplacian.reserve(2 * nb_pix);
+    let total = nb_pix / 1000;
+    for i in 0..nb_pix {
+        if is_on_border(i, n, m) {
+            laplacian.push(i, i, 1.0);
+            rhs[i] = 0.0;
+        } else {
+            laplacian.push(i, i, 4.0);
+            if i >= 1 {
+                laplacian.push(i, i - 1, -1.0);
+            }
+            if i + 1 <= nb_pix - 1 {
+                laplacian.push(i, i + 1, -1.0);
+            }
+            if i >= m {
+                laplacian.push(i, i - m, -1.0);
+            }
+            if i + m <= nb_pix - 1 {
+                laplacian.push(i, i + m, -1.0);
+            }
         }
-    };
-}
-
-fn stylet_dx(
-    i: usize,
-    j: usize,
-    nb_line: usize,
-    nb_col: usize,
-    store: StorageStyle,
-    rows: &Vec<usize>,
-    cols: &Vec<usize>,
-    values: &Vec<usize>,
-) -> () {
-    if i > 0 {
-        to_be_added = add_lc_term(i, j, i - 1, j, -0.5, nb_line, nb_col, store);
-        build_sparse(&rows, &cols, &values, to_be_added);
-    }
-    if i < (nb_line - 1) {
-        to_be_added = add_lc_term(i, j, i + 1, j, 0.5, nb_line, nb_col, store);
-        build_sparse(&rows, &cols, &values, to_be_added);
-    }
-}
-
-fn stylet_dy(
-    i: usize,
-    j: usize,
-    nb_line: usize,
-    nb_col: usize,
-    store: StorageStyle,
-    rows: &Vec<usize>,
-    cols: &Vec<usize>,
-    values: &Vec<usize>,
-) -> () {
-    if j > 0 {
-        to_be_added = add_lc_term(i, j, i, j - 1, -0.5, nb_line, nb_col, store);
-        build_sparse(&rows, &cols, &values, to_be_added);
-    }
-    if j < (nb_col - 1) {
-        to_be_added = add_lc_term(i, j, i, j + 1, 0.5, nb_line, nb_col, store);
-        build_sparse(&rows, &cols, &values, to_be_added);
-    }
-}
-
-pub fn diff_op(
-    nb_line: usize,
-    nb_col: usize,
-    stylet: fn(
-        usize,
-        usize,
-        usize,
-        usize,
-        StorageStyle,
-        &Vec<usize>,
-        &Vec<usize>,
-        &Vec<usize>,
-    ) -> (),
-) -> CooMatrix<f32> {
-    let rows: Vec<usize> = Vec::new();
-    let cols: Vec<usize> = Vec::new();
-    let values: Vec<usize> = Vec::new();
-    let nb_pix: usize = nb_line * nb_col;
-    let mut to_be_added: Result<(usize, usize, f32), anyhow::Error>;
-    // Centered finite differences :
-    //          (0.0)
-    //            |
-    // (-0.5) _ (0.0) _ (0.5)
-    //            |
-    //          (0.0)
-    for i in 0..nb_line {
-        for j in 0..nb_col {
-            stylet(i, j, nb_line, nb_col, store, &rows, &cols, &values);
+        if i % 1000 == 0 {
+            log::info!("Laplacian computation : {}/{}", i / 1000, total);
         }
     }
-    CooMatrix::try_from_triplets(nb_pix, nb_pix, rows, cols, values)
+    let csc: CscMatrix<f32> = CscMatrix::from(&laplacian);
+
+    log::info!("Factorization...");
+    let lhs: Result<CscCholesky<f32>, CholeskyError> = CscCholesky::<f32>::factor(&csc);
+    log::info!("Factorization ok, solving system");
+    let result: DMatrix<f32> = match lhs {
+        Ok(factorization) => factorization.solve(&rhs),
+        Err(_) => return Err(anyhow!("Solving cholesky failed")),
+    };
+    log::info!("Result of height map OK");
+    Ok((div_g, result))
 }
 
-pub fn dx(nb_line: usize, nb_col: usize) -> CsrMatrix<f32> {
-    CsrMatrix::from(&diff_op(nb_line, nb_col, stylet_dx))
+//
+
+/// Checks if ith line of the laplacian refers to the border (for the diagonal coef that is).
+/// n and m represent the size of the cropped vector field input.
+fn is_on_border(k: usize, n: usize, m: usize) -> bool {
+    let i = k % m;
+    let j = k / m;
+    i == 0 || i == (n - 1) || j == 0 || j == (m - 1)
 }
 
-pub fn dy(nb_line: usize, nb_col: usize) -> CsrMatrix<f32> {
-    CsrMatrix::from(&diff_op(nb_line, nb_col, stylet_dy))
-}
-
-pub fn laplacian(nb_line: usize, nb_col: usize) -> CsrMatrix<f32> {
-    let dx_mat = dx(nb_line, nb_col);
-    let dy_mat = dy(nb_line, nb_col);
-    -dx_mat.transpose() * &dx_mat - dy_mat.transpose() * &dy_mat
-}
+// Centered finite differences for laplacian(heightmap):
+//         (-1.0)
+//            |
+// (-1.0) _ (4.0) _ (-1.0)
+//            |
+//         (-1.0)
+// let mut rhs: DVector<f32> = DVector::from_iterator(nb_pix, div_g.iter());
+// let lhs: DMatrix<f32> = DMatrix::from_fn(nb_pix, nb_pix, |i, j| {
+//     if i == j {
+//         4.0
+//     } else if i == j - 1 {
+//         -1.0
+//     } else if i == j + 1 {
+//         -1.0
+//     } else if i == j + m {
+//         -1.0
+//     } else if i == j - m {
+//         1.0
+//     } else {
+//         0.0
+//     }
+// });
+// let decompo: Cholesky<f32, Dynamic> = lhs
+//     .cholesky()
+//     .expect("Cholesky decomposition for height map failed !!!");
+// decompo.solve_mut(&mut rhs); // solve "in place" on rhs
+// let u: DVector<f32> = rhs;
+// DMatrix::from_vec_generic(Dynamic::new(n), Dynamic::new(m), u.as_slice().to_vec())
