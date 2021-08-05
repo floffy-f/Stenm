@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use anyhow::{anyhow, Context};
+use anyhow;
 use image::DynamicImage;
 use nalgebra::{DMatrix, Scalar, Vector6};
+use nalgebra_new;
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::io::Cursor;
@@ -60,6 +61,9 @@ impl Stenm {
     pub fn normal_map(&self) -> Result<Box<[u8]>, JsValue> {
         self.0.borrow().normal_map()
     }
+    pub fn height_map(&self) -> Result<Box<[u8]>, JsValue> {
+        self.0.borrow().height_map()
+    }
     // pub fn cropped_img_file(&self, i: usize) -> Result<Box<[u8]>, JsValue> {
     //     self.0.borrow().cropped_img_file(i)
     // }
@@ -83,6 +87,7 @@ struct StenmInner {
     // motion_vec: Option<Vec<Vector6<f32>>>,
     lights: Vec<(f32, f32, f32)>,
     normal_map: Vec<u8>,
+    height_map: Vec<u8>,
 }
 
 enum Dataset {
@@ -122,6 +127,7 @@ impl StenmInner {
             // motion_vec: None,
             lights: Vec::new(),
             normal_map: Vec::<u8>::new(),
+            height_map: Vec::<u8>::new(),
         }
     }
 
@@ -131,7 +137,7 @@ impl StenmInner {
 
     // Load and decode the images to be registered.
     pub fn load(&mut self, id: String, img_file: &[u8]) -> Result<(), JsValue> {
-        console_log!("Loading an image");
+        //console_log!("Loading an image");
         let reader = image::io::Reader::new(Cursor::new(img_file))
             .with_guessed_format()
             .expect("Cursor io never fails");
@@ -208,12 +214,13 @@ impl StenmInner {
     async fn run(&mut self, params: JsValue) -> Result<JsValue, JsValue> {
         // self.motion_vec = None;
         self.normal_map.clear();
+        self.height_map.clear();
         let args: Args = params.into_serde().unwrap();
         utils::WasmLogger::setup(utils::verbosity_filter(args.config.verbosity));
 
         log::info!("No conf yet");
 
-        let conf: planar::pps::Config_pps = planar::pps::Config_pps {
+        let conf: planar::pps::ConfigPps = planar::pps::ConfigPps {
             max_iterations: args.config.max_iterations,
             threshold: args.config.threshold,
             z_mean: args.config.z_mean,
@@ -250,18 +257,18 @@ impl StenmInner {
                     Some(frame) => {
                         let cropped: Result<Vec<DMatrix<f32>>, _> = imgs
                             .iter()
-                            .map(|im| {
-                                log::info!("1st px : {:?}", im[1]);
-                                im
-                            })
+                            // .map(|im| {
+                            //     log::info!("1st px : {:?}", im[1]);
+                            //     im
+                            // })
                             .map(|im| f32_image_matrix(im))
-                            .map(|im| {
-                                // let mean = im.as_ref().map(|i| i.mean()).unwrap_or(0.0);
-                                log::info!("1st float : {:?}", im[1]);
-                                let mean = im.mean();
-                                log::info!("Moy :{}", mean);
-                                im
-                            })
+                            // .map(|im| {
+                            //     // let mean = im.as_ref().map(|i| i.mean()).unwrap_or(0.0);
+                            //     log::info!("1st float : {:?}", im[1]);
+                            //     let mean = im.mean();
+                            //     log::info!("Moy :{}", mean);
+                            //     im
+                            // })
                             .map(|im| crop(frame, &im))
                             .collect();
                         match cropped {
@@ -289,12 +296,38 @@ impl StenmInner {
             }
         };
 
+        let (n, m) = normals.shape();
         log::info!("Computations ok");
 
         self.normal_map = planar::main::save_normals(&normals).map_err(utils::report_error)?;
 
         log::info!("Encode PNG OK");
 
+        let height_map: Result<
+            (nalgebra_new::DMatrix<f32>, nalgebra_new::DMatrix<f32>),
+            anyhow::Error,
+        > = planar::height_map::solve_for_nmap(&nalgebra_new::DMatrix::from_iterator(
+            n,
+            m,
+            normals.iter().cloned(),
+        ));
+
+        log::info!("Height map ok");
+
+        self.height_map = match height_map {
+            Err(_) => Vec::<u8>::new(),
+            Ok((_div, hm)) => {
+                log::info!("rows: {}", n);
+                log::info!("cols: {}", m);
+                log::info!("pix: {}", n * m);
+                let to_mat: DMatrix<f32> = DMatrix::from_iterator(n, m, hm.iter().cloned());
+                log::info!("height map rows: {}", to_mat.nrows());
+                log::info!("height map cols: {}", to_mat.ncols());
+                planar::main::save_matrix(&to_mat).map_err(utils::report_error)?
+            }
+        };
+
+        log::info!("Height map encoded");
         let false_vec: Vec<f32> = Vec::new();
         JsValue::from_serde(&false_vec).map_err(utils::report_error)
         // let flat_motion_vec: Vec<f32> = motion_vec.iter().flatten().cloned().collect();
@@ -312,6 +345,12 @@ impl StenmInner {
         // Maybe we don't need to lose ownership.
         Ok(self.normal_map.clone().into_boxed_slice())
     }
+    pub fn height_map(&self) -> Result<Box<[u8]>, JsValue> {
+        // WARNING : is the clone useful ??
+        // Maybe we don't need to lose ownership.
+        Ok(self.height_map.clone().into_boxed_slice())
+    }
+
     // // Retrieve the cropped registered images.
     // pub fn cropped_img_file(&self, i: usize) -> Result<Box<[u8]>, JsValue> {
     //     encode(i, &self.crop_registered[i]).map_err(utils::report_error)

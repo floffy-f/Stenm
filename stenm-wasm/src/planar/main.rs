@@ -225,14 +225,19 @@ pub fn save_u8_imgs(dir: &Path, imgs: &[DMatrix<u8>]) {
     });
 }
 
-pub fn save_matrix<P: AsRef<Path>>(img: &DMatrix<f32>, path: P) {
+pub fn save_matrix(img: &DMatrix<f32>) -> Result<Vec<u8>, ImageError> {
     let im_max = img.max();
     let (nrows, ncols) = img.shape();
-    let img_u8 =
+    let img_u8: DMatrix<u8> =
         DMatrix::from_iterator(nrows, ncols, img.iter().map(|x| (x / im_max * 255.0) as u8));
-    crate::planar::interop::image_from_matrix(&img_u8)
-        .save(path)
-        .unwrap();
+    let mut buffer: Vec<u8> = Vec::new();
+    img_u8
+        .to_image()
+        .write_to(&mut buffer, image::ImageOutputFormat::Png)?;
+    Ok(buffer)
+    // crate::planar::interop::image_from_matrix(&img_u8)
+    //     .save(path)
+    //     .unwrap();
 }
 
 type Coords = (f32, f32, f32);
