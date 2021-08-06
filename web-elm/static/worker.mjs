@@ -77,13 +77,21 @@ async function run(params) {
   const image_ids = Stenm.image_ids();
   const imgCount = image_ids.length;
   console.log(`Encoding normal map:`);
-  let NMu8 = Stenm.height_map();
+  let NMu8 = Stenm.normal_map();
+  let HMu8 = Stenm.height_map();
   postMessage(
 	{
 	  type: "cropped-image",
 	  data: { id: "n_map", arrayBuffer: NMu8.buffer, imgCount: 1 },
 	},
 	[NMu8.buffer]
+  );
+  postMessage(
+	{
+	  type: "hmap",
+	  data: { id: "h_map", arrayBuffer: HMu8.buffer, imgCount: 1 },
+	},
+	[HMu8.buffer]
   );
   // for (let i = 0; i < imgCount; i++) {
   //   await shouldStop("encoding", i);

@@ -12,6 +12,7 @@ export function activatePorts(app, containerSize) {
 
   // Global variable holding image ids
   let croppedImages = [];
+  let hmap = [];
   let registeredImages = [];
   let nb_images = 0;
 
@@ -33,6 +34,17 @@ export function activatePorts(app, containerSize) {
       if (croppedImages.length == imgCount) {
         console.log(`Normal map computed, sending through port`);
         app.ports.receiveCroppedImages.send(croppedImages);
+      }
+    } else if (event.data.type == "hmap") {
+      // Add the cropped image to the list of cropped images.
+      const { id, arrayBuffer, imgCount } = event.data.data;
+      console.log("Received cropped image in main:", id);
+      const url = URL.createObjectURL(new Blob([arrayBuffer]));
+      const decodedCropped = await utils.decodeImage(url);
+      hmap.push({ id, img: decodedCropped });
+      if (hmap.length == imgCount) {
+        console.log(`Normal map computed, sending through port`);
+        app.ports.receiveHMap.send(hmap);
       }
     } else if (event.data.type == "registered-image") {
       // Add the registered image to the list of registered images.

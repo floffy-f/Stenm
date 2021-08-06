@@ -75,6 +75,8 @@ port updateRunStep : ({ step : String, progress : Maybe Int } -> msg) -> Sub msg
 
 port receiveCroppedImages : (List { id : String, img : Value } -> msg) -> Sub msg
 
+port receiveHMap : (List { id : String, img : Value } -> msg) -> Sub msg
+
 
 main : Program Device.Size Model Msg
 main =
@@ -95,9 +97,11 @@ type alias Model =
     , paramsInfo : ParametersToggleInfo
     , viewer : Viewer
     , nMapViewer : Viewer
+    , hMapViewer : Viewer
     , pointerMode : PointerMode
     , bboxDrawn : Maybe BBox
     , nMapPNG : Maybe (Pivot Image)
+    , hMapPNG : Maybe (Pivot Image)
     , seenLogs : List { lvl : Int, content : String }
     , notSeenLogs : List { lvl : Int, content : String }
     , scrollPos : Float
@@ -149,6 +153,7 @@ type State
     | ViewImgs { images : Pivot Image }
     | Config { images : Pivot Image }
     | NMap { images : Pivot Image }
+    | HMap { images : Pivot Image }
     | Logs { images : Pivot Image }
 
 
@@ -284,9 +289,11 @@ initialModel size =
     , paramsInfo = defaultParamsInfo
     , viewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
     , nMapViewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
+    , hMapViewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
     , pointerMode = WaitingMove
     , bboxDrawn = Nothing
     , nMapPNG = Nothing
+    , hMapPNG = Nothing
     , seenLogs = []
     , notSeenLogs = []
     , scrollPos = 0.0
@@ -413,6 +420,7 @@ type Msg
     | VerbosityChange Float
     | ToggleAutoScroll Bool
     | ReceiveCroppedImages (List { id : String, img : Value })
+    | ReceiveHMap (List { id : String, img : Value })
     | ReceiveCsv String
     | SaveNMapPNG
     | ScrollLogsToEnd
@@ -483,6 +491,7 @@ type NavigationMsg
     = GoToPageImages
     | GoToPageConfig
     | GoToPageNMap
+    | GoToPageHMap
     | GoToPageLogs
 
 
@@ -522,16 +531,19 @@ subscriptions model =
             Sub.batch [ resizes WindowResizes, log Log, imageDecoded ImageDecoded ]
 
         ViewImgs _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
 
         Config _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, updateRunStep UpdateRunStep ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep ]
 
         NMap _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
+
+        HMap _ ->
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
 
         Logs _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, updateRunStep UpdateRunStep ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep ]
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -545,6 +557,7 @@ update msg model =
                 | device = Device.classify size
                 , viewer = Viewer.resize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) ) model.viewer
                 , nMapViewer = Viewer.resize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) ) model.nMapViewer
+                , hMapViewer = Viewer.resize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) ) model.hMapViewer
               }
             , Cmd.none
             )
@@ -700,6 +713,12 @@ update msg model =
         ( NavigationMsg navMsg, NMap data ) ->
             ( goTo navMsg data model, Cmd.none )
 
+        ( NavigationMsg GoToPageLogs, HMap data ) ->
+            ( goTo GoToPageLogs data model, scrollLogsToPos model.scrollPos )
+
+        ( NavigationMsg navMsg, HMap data ) ->
+            ( goTo navMsg data model, Cmd.none )
+
         ( NavigationMsg navMsg, Logs data ) ->
             ( goTo navMsg data model, Cmd.none )
 
@@ -724,6 +743,9 @@ update msg model =
 
         ( ZoomMsg zoomMsg, NMap _ ) ->
             ( { model | nMapViewer = zoomViewer zoomMsg model.nMapViewer }, Cmd.none )
+
+        ( ZoomMsg zoomMsg, HMap _ ) ->
+            ( { model | hMapViewer = zoomViewer zoomMsg model.hMapViewer }, Cmd.none )
 
         ( PointerMsg pointerMsg, ViewImgs { images } ) ->
             case ( pointerMsg, model.pointerMode ) of
@@ -960,6 +982,11 @@ update msg model =
             , run (encodeParams params)
             )
 
+        ( RunAlgorithm params, HMap imgs ) ->
+            ( runAndSwitchToLogsPage imgs model
+            , run (encodeParams params)
+            )
+
         ( RunAlgorithm params, Logs imgs ) ->
             ( runAndSwitchToLogsPage imgs model
             , run (encodeParams params)
@@ -1058,6 +1085,19 @@ update msg model =
                     , Cmd.none
                     )
 
+        ( ReceiveHMap croppedImages, _ ) ->
+            case List.filterMap imageFromValue croppedImages of
+                [] ->
+                    ( model, Cmd.none )
+
+                firstImage :: otherImages ->
+                    ( { model
+                        | hMapPNG = Just (Pivot.fromCons firstImage otherImages)
+                        , hMapViewer = Viewer.fitImage 1.0 ( toFloat firstImage.width, toFloat firstImage.height ) model.hMapViewer
+                      }
+                    , Cmd.none
+                    )
+
         ( ReceiveCsv content, _) ->
             let
                 -- myCsv : Result (List DeadEnd) Csv
@@ -1127,6 +1167,31 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        ( PointerMsg pointerMsg, HMap _ ) ->
+            case ( pointerMsg, model.pointerMode ) of
+                -- Moving the viewer
+                ( PointerDownRaw event, WaitingMove ) ->
+                    case Json.Decode.decodeValue Pointer.eventDecoder event of
+                        Err _ ->
+                            ( model, Cmd.none )
+
+                        Ok { pointer } ->
+                            ( { model | pointerMode = PointerMovingFromClientCoords pointer.clientPos }, capture event )
+
+                ( PointerMove ( newX, newY ), PointerMovingFromClientCoords ( x, y ) ) ->
+                    ( { model
+                        | hMapViewer = Viewer.pan ( newX - x, newY - y ) model.hMapViewer
+                        , pointerMode = PointerMovingFromClientCoords ( newX, newY )
+                      }
+                    , Cmd.none
+                    )
+
+                ( PointerUp, PointerMovingFromClientCoords _ ) ->
+                    ( { model | pointerMode = WaitingMove }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
         ( SaveNMapPNG, _ ) ->
             ( model, saveNMapPNG model.imagesCount )
 
@@ -1151,7 +1216,7 @@ update msg model =
 
 runAndSwitchToLogsPage : { images : Pivot Image } -> Model -> Model
 runAndSwitchToLogsPage imgs model =
-    goTo GoToPageLogs imgs { model | nMapPNG = Nothing, runStep = StepNotStarted }
+    goTo GoToPageLogs imgs { model | nMapPNG = Nothing, hMapPNG = Nothing, runStep = StepNotStarted }
 
 
 scrollLogsToEndCmd : Cmd Msg
@@ -1281,6 +1346,9 @@ goTo msg data model =
 
         GoToPageNMap ->
             { model | state = NMap data, pointerMode = WaitingMove }
+
+        GoToPageHMap ->
+            { model | state = HMap data, pointerMode = WaitingMove }
 
         GoToPageLogs ->
             { model
@@ -1582,6 +1650,9 @@ viewElmUI model =
         NMap _ ->
             viewNMap model
 
+        HMap _ ->
+            viewHMap model
+
         Logs _ ->
             viewLogs model
 
@@ -1650,6 +1721,18 @@ nMapHeaderTab msg nMapPNG =
     in
     headerTabWithAttributes "N-map" msg otherAttributes
 
+hMapHeaderTab : Maybe Msg -> Maybe (Pivot Image) -> Element Msg
+hMapHeaderTab msg hMapPNG =
+    let
+        otherAttributes : List (Element.Attribute Msg)
+        otherAttributes =
+            if hMapPNG == Nothing then
+                []
+
+            else
+                [ Element.inFront (Element.el [ alignRight, padding 2 ] (littleDot "green" |> Element.html)) ]
+    in
+    headerTabWithAttributes "H-map" msg otherAttributes
 
 logsHeaderTab : Maybe Msg -> List { lvl : Int, content : String } -> Element Msg
 logsHeaderTab msg logs =
@@ -1927,12 +2010,13 @@ progressBar color progressRatio =
 
 
 viewLogs : Model -> Element Msg
-viewLogs ({ autoscroll, verbosity, seenLogs, notSeenLogs, nMapPNG } as model) =
+viewLogs ({ autoscroll, verbosity, seenLogs, notSeenLogs, nMapPNG, hMapPNG } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (GetScrollPosThenNavigationMsg GoToPageImages))
             , headerTab "Config" (Just (GetScrollPosThenNavigationMsg GoToPageConfig))
             , nMapHeaderTab (Just (GetScrollPosThenNavigationMsg GoToPageNMap)) nMapPNG
+            , hMapHeaderTab (Just (GetScrollPosThenNavigationMsg GoToPageHMap)) hMapPNG
             , logsHeaderTab Nothing notSeenLogs
             ]
         , runProgressBar model
@@ -2092,12 +2176,13 @@ verbositySlider verbosity =
 
 
 viewNMap : Model -> Element Msg
-viewNMap ({ nMapPNG, nMapViewer, notSeenLogs } as model) =
+viewNMap ({ nMapPNG, hMapPNG, nMapViewer, notSeenLogs } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (NavigationMsg GoToPageImages))
             , headerTab "Config" (Just (NavigationMsg GoToPageConfig))
             , nMapHeaderTab Nothing nMapPNG
+            , hMapHeaderTab (Just (NavigationMsg GoToPageHMap)) hMapPNG
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
@@ -2191,17 +2276,121 @@ viewNMap ({ nMapPNG, nMapViewer, notSeenLogs } as model) =
         ]
 
 
+-- HMap
+
+
+viewHMap : Model -> Element Msg
+viewHMap ({ nMapPNG, hMapPNG, hMapViewer, notSeenLogs } as model) =
+    Element.column [ width fill, height fill ]
+        [ headerBar
+            [ headerTab "Images" (Just (NavigationMsg GoToPageImages))
+            , headerTab "Config" (Just (NavigationMsg GoToPageConfig))
+            , nMapHeaderTab (Just (NavigationMsg GoToPageNMap)) nMapPNG
+            , hMapHeaderTab Nothing hMapPNG
+            , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
+            ]
+        , runProgressBar model
+        , Element.html <|
+            Html.node "style"
+                []
+                [ Html.text ".pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }" ]
+        , case hMapPNG of
+            Nothing ->
+                Element.el [ centerX, centerY ]
+                    (Element.text "Normal map not computed yet")
+
+            Just images ->
+                let
+                    img : Image
+                    img =
+                        Pivot.getC images
+
+                    clickButton :
+                        Element.Attribute Msg
+                        -> Msg
+                        -> String
+                        -> (Float -> Element Msg)
+                        -> Element Msg
+                    clickButton alignment msg title icon =
+                        Element.Input.button
+                            [ padding 6
+                            , alignment
+                            , Element.Background.color (Element.rgba255 255 255 255 0.8)
+                            , Element.Font.color Style.black
+                            , Element.htmlAttribute <| Html.Attributes.style "box-shadow" "none"
+                            , Element.htmlAttribute <| Html.Attributes.title title
+                            ]
+                            { onPress = Just msg
+                            , label = icon 32
+                            }
+
+                    buttonsRow : Element Msg
+                    buttonsRow =
+                        Element.row [ centerX ]
+                            [ clickButton centerX (ZoomMsg (ZoomFit img)) "Fit zoom to image" Icon.zoomFit
+                            , clickButton centerX (ZoomMsg ZoomOut) "Zoom out" Icon.zoomOut
+                            , clickButton centerX (ZoomMsg ZoomIn) "Zoom in" Icon.zoomIn
+                            ]
+
+                    ( viewerWidth, viewerHeight ) =
+                        hMapViewer.size
+
+                    clearCanvas : Canvas.Renderable
+                    clearCanvas =
+                        Canvas.clear ( 0, 0 ) viewerWidth viewerHeight
+
+                    renderedImage : Canvas.Renderable
+                    renderedImage =
+                        Canvas.texture
+                            [ Viewer.Canvas.transform hMapViewer
+                            , Canvas.Settings.Advanced.imageSmoothing False
+                            ]
+                            ( 0, 0 )
+                            img.texture
+
+                    canvasViewer : Html Msg
+                    canvasViewer =
+                        Canvas.toHtml ( round viewerWidth, round viewerHeight )
+                            [ Html.Attributes.id "theCanvas"
+                            , Html.Attributes.style "display" "block"
+                            , Wheel.onWheel (zoomWheelMsg hMapViewer)
+                            , msgOn "pointerdown" (Json.Decode.map (PointerMsg << PointerDownRaw) Json.Decode.value)
+                            , Pointer.onUp (\_ -> PointerMsg PointerUp)
+                            , Html.Attributes.style "touch-action" "none"
+                            , Html.Events.preventDefaultOn "pointermove" <|
+                                Json.Decode.map (\coords -> ( PointerMsg (PointerMove coords), True )) <|
+                                    Json.Decode.map2 Tuple.pair
+                                        (Json.Decode.field "clientX" Json.Decode.float)
+                                        (Json.Decode.field "clientY" Json.Decode.float)
+                            ]
+                            [ clearCanvas, renderedImage ]
+                in
+                Element.el
+                    [ Element.inFront buttonsRow
+                    , Element.inFront
+                        (Element.row [ alignBottom, width fill ]
+                            [ clickButton alignLeft ClickPreviousImage "Previous image" Icon.arrowLeftCircle
+                            , clickButton alignRight ClickNextImage "Next image" Icon.arrowRightCircle
+                            ]
+                        )
+                    , Element.clip
+                    , height fill
+                    ]
+                    (Element.html canvasViewer)
+        ]
+
 
 -- Parameters config
 
 
 viewConfig : Model -> Element Msg
-viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, nMapPNG } as model) =
+viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, nMapPNG, hMapPNG } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (NavigationMsg GoToPageImages))
             , headerTab "Config" Nothing
             , nMapHeaderTab (Just (NavigationMsg GoToPageNMap)) nMapPNG
+            , hMapHeaderTab (Just (NavigationMsg GoToPageHMap)) hMapPNG
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
@@ -2703,7 +2892,7 @@ toggleCheckboxWidget { offColor, onColor, sliderColor, toggleWidth, toggleHeight
 
 
 viewImgs : Model -> Pivot Image -> Element Msg
-viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, nMapPNG } as model) images =
+viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, nMapPNG, hMapPNG } as model) images =
     let
         img : Image
         img =
@@ -2870,6 +3059,7 @@ viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, nMapPNG } as model) ima
             [ headerTab "Images" Nothing
             , headerTab "Config" (Just (NavigationMsg GoToPageConfig))
             , nMapHeaderTab (Just (NavigationMsg GoToPageNMap)) nMapPNG
+            , hMapHeaderTab (Just (NavigationMsg GoToPageHMap)) hMapPNG
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
