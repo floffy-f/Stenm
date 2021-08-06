@@ -72,20 +72,20 @@ pub fn solve_for_nmap(
     for i in 0..nb_pix {
         if is_on_border(i, n, m) {
             laplacian.push(i, i, 1.0);
-            rhs[i] = 0.0;
+            rhs[i] = 1.0;
         } else {
             laplacian.push(i, i, 4.0);
-            if i >= 1 {
+            if i >= 1 && !is_on_border(i - 1, n, m) {
                 laplacian.push(i, i - 1, -1.0);
             }
-            if i + 1 <= nb_pix - 1 {
+            if i + 1 <= nb_pix - 1 && !is_on_border(i + 1, n, m) {
                 laplacian.push(i, i + 1, -1.0);
             }
-            if i >= m {
-                laplacian.push(i, i - m, -1.0);
+            if i >= n && !is_on_border(i - n, n, m) {
+                laplacian.push(i, i - n, -1.0);
             }
-            if i + m <= nb_pix - 1 {
-                laplacian.push(i, i + m, -1.0);
+            if i + n <= nb_pix - 1 && !is_on_border(i + n, n, m) {
+                laplacian.push(i, i + n, -1.0);
             }
         }
         if i % 1000 == 0 {
@@ -110,8 +110,8 @@ pub fn solve_for_nmap(
 /// Checks if ith line of the laplacian refers to the border (for the diagonal coef that is).
 /// n and m represent the size of the cropped vector field input.
 fn is_on_border(k: usize, n: usize, m: usize) -> bool {
-    let i = k % m;
-    let j = k / m;
+    let i = k % n;
+    let j = k / n;
     i == 0 || i == (n - 1) || j == 0 || j == (m - 1)
 }
 
