@@ -323,7 +323,7 @@
     imports.wbg.__wbindgen_rethrow = function(arg0) {
       throw takeObject(arg0);
     };
-    imports.wbg.__wbindgen_closure_wrapper363 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper365 = function(arg0, arg1, arg2) {
       var ret = makeMutClosure(arg0, arg1, 171, __wbg_adapter_16);
       return addHeapObject(ret);
     };
@@ -385,11 +385,16 @@
     const image_ids = Stenm2.image_ids();
     const imgCount = image_ids.length;
     console.log(`Encoding normal map:`);
-    let NMu8 = Stenm2.height_map();
+    let NMu8 = Stenm2.normal_map();
+    let HMu8 = Stenm2.height_map();
     postMessage({
       type: "cropped-image",
       data: { id: "n_map", arrayBuffer: NMu8.buffer, imgCount: 1 }
     }, [NMu8.buffer]);
+    postMessage({
+      type: "hmap",
+      data: { id: "h_map", arrayBuffer: HMu8.buffer, imgCount: 1 }
+    }, [HMu8.buffer]);
     await shouldStop("done", null);
   }
   async function warpEncode({ imgCount }) {
