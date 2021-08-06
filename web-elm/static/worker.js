@@ -323,7 +323,7 @@
     imports.wbg.__wbindgen_rethrow = function(arg0) {
       throw takeObject(arg0);
     };
-    imports.wbg.__wbindgen_closure_wrapper361 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper363 = function(arg0, arg1, arg2) {
       var ret = makeMutClosure(arg0, arg1, 171, __wbg_adapter_16);
       return addHeapObject(ret);
     };
