@@ -67,7 +67,9 @@ pub fn solve_for_nmap(
     log::info!("Ending computations of div_g");
 
     let mut laplacian = CooMatrix::new(nb_pix, nb_pix);
-    laplacian.reserve(2 * nb_pix);
+    // Memory alloc to avoid frequent realloc
+    // Count of non-0 coefs :
+    laplacian.reserve(11 * nb_pix - 4 * n - 9);
     let total = nb_pix / 1000;
     for i in 0..nb_pix {
         if is_on_border(i, n, m) {
@@ -75,16 +77,16 @@ pub fn solve_for_nmap(
             rhs[i] = 1.0;
         } else {
             laplacian.push(i, i, 4.0);
-            if i >= 1 && !is_on_border(i - 1, n, m) {
+            if i >= 1 {
                 laplacian.push(i, i - 1, -1.0);
             }
-            if i + 1 <= nb_pix - 1 && !is_on_border(i + 1, n, m) {
+            if i + 1 <= nb_pix - 1 {
                 laplacian.push(i, i + 1, -1.0);
             }
-            if i >= n && !is_on_border(i - n, n, m) {
+            if i >= n {
                 laplacian.push(i, i - n, -1.0);
             }
-            if i + n <= nb_pix - 1 && !is_on_border(i + n, n, m) {
+            if i <= nb_pix - (1 + n) {
                 laplacian.push(i, i + n, -1.0);
             }
         }
@@ -98,7 +100,10 @@ pub fn solve_for_nmap(
     let lhs: Result<CscCholesky<f32>, CholeskyError> = CscCholesky::<f32>::factor(&csc);
     log::info!("Factorization ok, solving system");
     let result: DMatrix<f32> = match lhs {
-        Ok(factorization) => factorization.solve(&rhs),
+        Ok(factorization) => {
+            factorization.solve_mut(&mut rhs); // in place factorization on rhs
+            rhs
+        }
         Err(_) => return Err(anyhow!("Solving cholesky failed")),
     };
     log::info!("Result of height map OK");
