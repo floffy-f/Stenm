@@ -64,7 +64,7 @@ port run : Value -> Cmd msg
 port stop : () -> Cmd msg
 
 
-port saveRegisteredImages : Int -> Cmd msg
+port saveNMapPNG : Int -> Cmd msg
 
 
 port log : ({ lvl : Int, content : String } -> msg) -> Sub msg
@@ -94,10 +94,10 @@ type alias Model =
     , paramsForm : ParametersForm
     , paramsInfo : ParametersToggleInfo
     , viewer : Viewer
-    , registeredViewer : Viewer
+    , nMapViewer : Viewer
     , pointerMode : PointerMode
     , bboxDrawn : Maybe BBox
-    , registeredImages : Maybe (Pivot Image)
+    , nMapPNG : Maybe (Pivot Image)
     , seenLogs : List { lvl : Int, content : String }
     , notSeenLogs : List { lvl : Int, content : String }
     , scrollPos : Float
@@ -148,7 +148,7 @@ type State
     | LoadingError
     | ViewImgs { images : Pivot Image }
     | Config { images : Pivot Image }
-    | Registration { images : Pivot Image }
+    | NMap { images : Pivot Image }
     | Logs { images : Pivot Image }
 
 
@@ -283,10 +283,10 @@ initialModel size =
     , paramsForm = defaultParamsForm
     , paramsInfo = defaultParamsInfo
     , viewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
-    , registeredViewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
+    , nMapViewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
     , pointerMode = WaitingMove
     , bboxDrawn = Nothing
-    , registeredImages = Nothing
+    , nMapPNG = Nothing
     , seenLogs = []
     , notSeenLogs = []
     , scrollPos = 0.0
@@ -414,7 +414,7 @@ type Msg
     | ToggleAutoScroll Bool
     | ReceiveCroppedImages (List { id : String, img : Value })
     | ReceiveCsv String
-    | SaveRegisteredImages
+    | SaveNMapPNG
     | ScrollLogsToEnd
 
 
@@ -482,7 +482,7 @@ type ParamsInfoMsg
 type NavigationMsg
     = GoToPageImages
     | GoToPageConfig
-    | GoToPageRegistration
+    | GoToPageNMap
     | GoToPageLogs
 
 
@@ -527,7 +527,7 @@ subscriptions model =
         Config _ ->
             Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, updateRunStep UpdateRunStep ]
 
-        Registration _ ->
+        NMap _ ->
             Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
 
         Logs _ ->
@@ -544,7 +544,7 @@ update msg model =
             ( { model
                 | device = Device.classify size
                 , viewer = Viewer.resize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) ) model.viewer
-                , registeredViewer = Viewer.resize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) ) model.registeredViewer
+                , nMapViewer = Viewer.resize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) ) model.nMapViewer
               }
             , Cmd.none
             )
@@ -665,13 +665,13 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        ( KeyDown rawKey, Registration _ ) ->
+        ( KeyDown rawKey, NMap _ ) ->
             case Keyboard.navigationKey rawKey of
                 Just Keyboard.ArrowRight ->
-                    ( { model | registeredImages = Maybe.map goToNextImage model.registeredImages }, Cmd.none )
+                    ( { model | nMapPNG = Maybe.map goToNextImage model.nMapPNG }, Cmd.none )
 
                 Just Keyboard.ArrowLeft ->
-                    ( { model | registeredImages = Maybe.map goToPreviousImage model.registeredImages }, Cmd.none )
+                    ( { model | nMapPNG = Maybe.map goToPreviousImage model.nMapPNG }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -694,10 +694,10 @@ update msg model =
         ( NavigationMsg navMsg, Config data ) ->
             ( goTo navMsg data model, Cmd.none )
 
-        ( NavigationMsg GoToPageLogs, Registration data ) ->
+        ( NavigationMsg GoToPageLogs, NMap data ) ->
             ( goTo GoToPageLogs data model, scrollLogsToPos model.scrollPos )
 
-        ( NavigationMsg navMsg, Registration data ) ->
+        ( NavigationMsg navMsg, NMap data ) ->
             ( goTo navMsg data model, Cmd.none )
 
         ( NavigationMsg navMsg, Logs data ) ->
@@ -722,8 +722,8 @@ update msg model =
         ( ZoomMsg zoomMsg, ViewImgs _ ) ->
             ( { model | viewer = zoomViewer zoomMsg model.viewer }, Cmd.none )
 
-        ( ZoomMsg zoomMsg, Registration _ ) ->
-            ( { model | registeredViewer = zoomViewer zoomMsg model.registeredViewer }, Cmd.none )
+        ( ZoomMsg zoomMsg, NMap _ ) ->
+            ( { model | nMapViewer = zoomViewer zoomMsg model.nMapViewer }, Cmd.none )
 
         ( PointerMsg pointerMsg, ViewImgs { images } ) ->
             case ( pointerMsg, model.pointerMode ) of
@@ -936,14 +936,14 @@ update msg model =
         ( ClickPreviousImage, ViewImgs { images } ) ->
             ( { model | state = ViewImgs { images = goToPreviousImage images }, lights = Maybe.map goToPreviousLight model.lights }, Cmd.none )
 
-        ( ClickPreviousImage, Registration _ ) ->
-            ( { model | registeredImages = Maybe.map goToPreviousImage model.registeredImages }, Cmd.none )
+        ( ClickPreviousImage, NMap _ ) ->
+            ( { model | nMapPNG = Maybe.map goToPreviousImage model.nMapPNG }, Cmd.none )
 
         ( ClickNextImage, ViewImgs { images } ) ->
             ( { model | state = ViewImgs { images = goToNextImage images }, lights = Maybe.map goToNextLight model.lights }, Cmd.none )
 
-        ( ClickNextImage, Registration _ ) ->
-            ( { model | registeredImages = Maybe.map goToNextImage model.registeredImages }, Cmd.none )
+        ( ClickNextImage, NMap _ ) ->
+            ( { model | nMapPNG = Maybe.map goToNextImage model.nMapPNG }, Cmd.none )
 
         ( RunAlgorithm params, ViewImgs imgs ) ->
             ( runAndSwitchToLogsPage imgs model
@@ -955,7 +955,7 @@ update msg model =
             , run (encodeParams params)
             )
 
-        ( RunAlgorithm params, Registration imgs ) ->
+        ( RunAlgorithm params, NMap imgs ) ->
             ( runAndSwitchToLogsPage imgs model
             , run (encodeParams params)
             )
@@ -1052,8 +1052,8 @@ update msg model =
 
                 firstImage :: otherImages ->
                     ( { model
-                        | registeredImages = Just (Pivot.fromCons firstImage otherImages)
-                        , registeredViewer = Viewer.fitImage 1.0 ( toFloat firstImage.width, toFloat firstImage.height ) model.registeredViewer
+                        | nMapPNG = Just (Pivot.fromCons firstImage otherImages)
+                        , nMapViewer = Viewer.fitImage 1.0 ( toFloat firstImage.width, toFloat firstImage.height ) model.nMapViewer
                       }
                     , Cmd.none
                     )
@@ -1078,12 +1078,8 @@ update msg model =
                 myCsv : Result CsvDecode.Error (List Point3d)
                 myCsv = CsvDecode.decodeCustom { fieldSeparator = ';' } CsvDecode.FieldNamesFromFirstRow decoder content
 
-                youCanGo : Bool
-                youCanGo = case ( model.loadImages, model.loadLights ) of
-                    ( LoadOk _, LoadOk _ ) ->
-                        True
-                    ( _, _ ) ->
-                        False
+                oldParams : Parameters
+                oldParams = model.params
             in
             ( { model
                 | lights = myCsv
@@ -1099,11 +1095,14 @@ update msg model =
                             |> List.length
                             |> String.fromInt
                             |> LoadOk
+                , params = { oldParams
+                             | lights = myCsv |> Result.toMaybe
+                           }
               }
             , Cmd.none
             )
 
-        ( PointerMsg pointerMsg, Registration _ ) ->
+        ( PointerMsg pointerMsg, NMap _ ) ->
             case ( pointerMsg, model.pointerMode ) of
                 -- Moving the viewer
                 ( PointerDownRaw event, WaitingMove ) ->
@@ -1116,7 +1115,7 @@ update msg model =
 
                 ( PointerMove ( newX, newY ), PointerMovingFromClientCoords ( x, y ) ) ->
                     ( { model
-                        | registeredViewer = Viewer.pan ( newX - x, newY - y ) model.registeredViewer
+                        | nMapViewer = Viewer.pan ( newX - x, newY - y ) model.nMapViewer
                         , pointerMode = PointerMovingFromClientCoords ( newX, newY )
                       }
                     , Cmd.none
@@ -1128,8 +1127,8 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        ( SaveRegisteredImages, _ ) ->
-            ( model, saveRegisteredImages model.imagesCount )
+        ( SaveNMapPNG, _ ) ->
+            ( model, saveNMapPNG model.imagesCount )
 
         ( ReturnHome, _ ) ->
             ( model, Browser.Navigation.reload )
@@ -1152,7 +1151,7 @@ update msg model =
 
 runAndSwitchToLogsPage : { images : Pivot Image } -> Model -> Model
 runAndSwitchToLogsPage imgs model =
-    goTo GoToPageLogs imgs { model | registeredImages = Nothing, runStep = StepNotStarted }
+    goTo GoToPageLogs imgs { model | nMapPNG = Nothing, runStep = StepNotStarted }
 
 
 scrollLogsToEndCmd : Cmd Msg
@@ -1280,8 +1279,8 @@ goTo msg data model =
         GoToPageConfig ->
             { model | state = Config data }
 
-        GoToPageRegistration ->
-            { model | state = Registration data, pointerMode = WaitingMove }
+        GoToPageNMap ->
+            { model | state = NMap data, pointerMode = WaitingMove }
 
         GoToPageLogs ->
             { model
@@ -1580,8 +1579,8 @@ viewElmUI model =
         Config _ ->
             viewConfig model
 
-        Registration _ ->
-            viewRegistration model
+        NMap _ ->
+            viewNMap model
 
         Logs _ ->
             viewLogs model
@@ -1638,18 +1637,18 @@ baseTabAttributes bgColor =
     ]
 
 
-registrationHeaderTab : Maybe Msg -> Maybe (Pivot Image) -> Element Msg
-registrationHeaderTab msg registeredImages =
+nMapHeaderTab : Maybe Msg -> Maybe (Pivot Image) -> Element Msg
+nMapHeaderTab msg nMapPNG =
     let
         otherAttributes : List (Element.Attribute Msg)
         otherAttributes =
-            if registeredImages == Nothing then
+            if nMapPNG == Nothing then
                 []
 
             else
                 [ Element.inFront (Element.el [ alignRight, padding 2 ] (littleDot "green" |> Element.html)) ]
     in
-    headerTabWithAttributes "Registration" msg otherAttributes
+    headerTabWithAttributes "N-map" msg otherAttributes
 
 
 logsHeaderTab : Maybe Msg -> List { lvl : Int, content : String } -> Element Msg
@@ -1827,8 +1826,8 @@ saveButton =
         , Element.Border.width 1
         , Element.Border.rounded 4
         ]
-        { onPress = Just SaveRegisteredImages
-        , label = Element.text "Save registered images"
+        { onPress = Just SaveNMapPNG
+        , label = Element.text "Save PNG-formated normal map"
         }
 
 
@@ -1891,7 +1890,7 @@ progressMessage model =
 --         StepIteration level iter ->
 --             0.1 + 0.7 * levelProgress level + 0.7 / toFloat lvlCount * subprogress iter model.params.maxIterations
 -- 
---         -- Say 80% to 90% for applying registration to cropped images
+--         -- Say 80% to 90% for applying nMap to cropped images
 --         StepApplying img ->
 --             0.8 + 0.1 * subprogress img model.imagesCount
 -- 
@@ -1928,12 +1927,12 @@ progressBar color progressRatio =
 
 
 viewLogs : Model -> Element Msg
-viewLogs ({ autoscroll, verbosity, seenLogs, notSeenLogs, registeredImages } as model) =
+viewLogs ({ autoscroll, verbosity, seenLogs, notSeenLogs, nMapPNG } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (GetScrollPosThenNavigationMsg GoToPageImages))
             , headerTab "Config" (Just (GetScrollPosThenNavigationMsg GoToPageConfig))
-            , registrationHeaderTab (Just (GetScrollPosThenNavigationMsg GoToPageRegistration)) registeredImages
+            , nMapHeaderTab (Just (GetScrollPosThenNavigationMsg GoToPageNMap)) nMapPNG
             , logsHeaderTab Nothing notSeenLogs
             ]
         , runProgressBar model
@@ -2089,16 +2088,16 @@ verbositySlider verbosity =
 
 
 
--- Registration
+-- NMap
 
 
-viewRegistration : Model -> Element Msg
-viewRegistration ({ registeredImages, registeredViewer, notSeenLogs } as model) =
+viewNMap : Model -> Element Msg
+viewNMap ({ nMapPNG, nMapViewer, notSeenLogs } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (NavigationMsg GoToPageImages))
             , headerTab "Config" (Just (NavigationMsg GoToPageConfig))
-            , registrationHeaderTab Nothing registeredImages
+            , nMapHeaderTab Nothing nMapPNG
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
@@ -2106,10 +2105,10 @@ viewRegistration ({ registeredImages, registeredViewer, notSeenLogs } as model) 
             Html.node "style"
                 []
                 [ Html.text ".pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }" ]
-        , case registeredImages of
+        , case nMapPNG of
             Nothing ->
                 Element.el [ centerX, centerY ]
-                    (Element.text "Registration not done yet")
+                    (Element.text "Normal map not computed yet")
 
             Just images ->
                 let
@@ -2145,7 +2144,7 @@ viewRegistration ({ registeredImages, registeredViewer, notSeenLogs } as model) 
                             ]
 
                     ( viewerWidth, viewerHeight ) =
-                        registeredViewer.size
+                        nMapViewer.size
 
                     clearCanvas : Canvas.Renderable
                     clearCanvas =
@@ -2154,7 +2153,7 @@ viewRegistration ({ registeredImages, registeredViewer, notSeenLogs } as model) 
                     renderedImage : Canvas.Renderable
                     renderedImage =
                         Canvas.texture
-                            [ Viewer.Canvas.transform registeredViewer
+                            [ Viewer.Canvas.transform nMapViewer
                             , Canvas.Settings.Advanced.imageSmoothing False
                             ]
                             ( 0, 0 )
@@ -2165,7 +2164,7 @@ viewRegistration ({ registeredImages, registeredViewer, notSeenLogs } as model) 
                         Canvas.toHtml ( round viewerWidth, round viewerHeight )
                             [ Html.Attributes.id "theCanvas"
                             , Html.Attributes.style "display" "block"
-                            , Wheel.onWheel (zoomWheelMsg registeredViewer)
+                            , Wheel.onWheel (zoomWheelMsg nMapViewer)
                             , msgOn "pointerdown" (Json.Decode.map (PointerMsg << PointerDownRaw) Json.Decode.value)
                             , Pointer.onUp (\_ -> PointerMsg PointerUp)
                             , Html.Attributes.style "touch-action" "none"
@@ -2197,12 +2196,12 @@ viewRegistration ({ registeredImages, registeredViewer, notSeenLogs } as model) 
 
 
 viewConfig : Model -> Element Msg
-viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, registeredImages } as model) =
+viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, nMapPNG } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (NavigationMsg GoToPageImages))
             , headerTab "Config" Nothing
-            , registrationHeaderTab (Just (NavigationMsg GoToPageRegistration)) registeredImages
+            , nMapHeaderTab (Just (NavigationMsg GoToPageNMap)) nMapPNG
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
@@ -2222,7 +2221,7 @@ viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, registeredImages } as
                             , label = Element.Input.labelHidden "Show detail info about cropped working frame"
                             }
                         ]
-                    , moreInfo paramsInfo.crop "Instead of using the whole image to estimate the registration, it is often faster and as accurate to focus the algorithm attention on a smaller frame in the image. The parameters here are the left, top, right and bottom coordinates of that cropped frame on which we want the algorithm to focus when estimating the alignment parameters."
+                    , moreInfo paramsInfo.crop "Instead of using the whole image to estimate the nMap, it is often faster and as accurate to focus the algorithm attention on a smaller frame in the image. The parameters here are the left, top, right and bottom coordinates of that cropped frame on which we want the algorithm to focus when estimating the alignment parameters."
                     , Element.row [ spacing 10 ]
                         [ Element.text "off"
                         , toggle (ParamsMsg << ToggleCrop) paramsForm.crop.active 30 "Toggle cropped working frame"
@@ -2310,7 +2309,7 @@ viewConfig ({ params, paramsForm, paramsInfo, notSeenLogs, registeredImages } as
                 -- #             , label = Element.Input.labelHidden "Show detail info about the sparse parameter"
                 -- #             }
                 -- #         ]
-                -- #     , moreInfo paramsInfo.sparse "Sparse ratio threshold to switch between dense and sparse registration. At each pyramid level only the pixels with the highest gradient intensities are kept, making each level sparser than the previous one. Once the ratio of selected pixels goes below this sparse ratio parameter, the algorithm performs a sparse registration, using only the selected points at that level. If you want to use a dense registration at every level, you can set this parameter to 0."
+                -- #     , moreInfo paramsInfo.sparse "Sparse ratio threshold to switch between dense and sparse nMap. At each pyramid level only the pixels with the highest gradient intensities are kept, making each level sparser than the previous one. Once the ratio of selected pixels goes below this sparse ratio parameter, the algorithm performs a sparse nMap, using only the selected points at that level. If you want to use a dense nMap at every level, you can set this parameter to 0."
                 -- #     , Element.text ("(default to " ++ String.fromFloat defaultParams.sparse ++ ")")
                 -- #     , floatInput paramsForm.sparse (ParamsMsg << ChangeSparse) "Sparse ratio threshold to switch"
                 -- #     , displayFloatErrors paramsForm.sparse.decodedInput
@@ -2704,7 +2703,7 @@ toggleCheckboxWidget { offColor, onColor, sliderColor, toggleWidth, toggleHeight
 
 
 viewImgs : Model -> Pivot Image -> Element Msg
-viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, registeredImages } as model) images =
+viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, nMapPNG } as model) images =
     let
         img : Image
         img =
@@ -2870,7 +2869,7 @@ viewImgs ({ pointerMode, bboxDrawn, viewer, notSeenLogs, registeredImages } as m
         [ headerBar
             [ headerTab "Images" Nothing
             , headerTab "Config" (Just (NavigationMsg GoToPageConfig))
-            , registrationHeaderTab (Just (NavigationMsg GoToPageRegistration)) registeredImages
+            , nMapHeaderTab (Just (NavigationMsg GoToPageNMap)) nMapPNG
             , logsHeaderTab (Just (NavigationMsg GoToPageLogs)) notSeenLogs
             ]
         , runProgressBar model
@@ -3390,7 +3389,7 @@ onDropAttributes =
             -- /!\ Cannot work with file.mime string for onOver,
             --     as it seems to always be "text/plain"
             { onOver = \typ _ ->
-                if extension (Debug.log "name:" typ).name then
+                if extension typ.name then
                     DragDropLightsMsg DragOverLights
                 else
                     DragDropImagesMsg DragOverImages

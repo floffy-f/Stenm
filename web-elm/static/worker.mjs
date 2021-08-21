@@ -53,13 +53,18 @@ async function decode({ id, url }) {
 async function run(params) {
   console.log("worker running with parameters:", params);
   // Convert params to what is expected by the Rust code.
+  const lights = params.lights;
+
+  for (const light of lights) {
+    Stenm.push_light(light.x, light.y, light.z);
+  }
+
   const args = {
     config: {
       max_iterations: params.maxIterations,
       threshold: params.convergenceThreshold,
       verbosity: params.maxVerbosity,
 	  z_mean: params.z_mean,
-	  lights: params.lights
     },
     crop: params.crop,
   };
@@ -71,21 +76,29 @@ async function run(params) {
   // Send back to main thread all cropped images.
   const image_ids = Stenm.image_ids();
   const imgCount = image_ids.length;
-  console.log(`Encoding ${imgCount} cropped aligned images:`);
-  for (let i = 0; i < imgCount; i++) {
-    await shouldStop("encoding", i);
-    const id = image_ids[i];
-    console.log("   Encoding ", id, " ...");
-    let croppedImgArrayU8 = Stenm.cropped_img_file(i);
-    // Transfer the array buffer back to main thread.
-    postMessage(
-      {
-        type: "cropped-image",
-        data: { id, arrayBuffer: croppedImgArrayU8.buffer, imgCount },
-      },
-      [croppedImgArrayU8.buffer]
-    );
-  }
+  console.log(`Encoding normal map:`);
+  let NMu8 = Stenm.normal_map();
+  postMessage(
+	{
+	  type: "cropped-image",
+	  data: { id: "n_map", arrayBuffer: NMu8.buffer, imgCount: 1 },
+	},
+	[NMu8.buffer]
+  );
+  // for (let i = 0; i < imgCount; i++) {
+  //   await shouldStop("encoding", i);
+  //   const id = image_ids[i];
+  //   console.log("   Encoding ", id, " ...");
+  //   let croppedImgArrayU8 = Stenm.normal_map(i);
+  //   // Transfer the array buffer back to main thread.
+  //   postMessage(
+  //     {
+  //       type: "cropped-image",
+  //       data: { id, arrayBuffer: croppedImgArrayU8.buffer, imgCount },
+  //     },
+  //     [croppedImgArrayU8.buffer]
+  //   );
+  // }
   await shouldStop("done", null);
 }
 
@@ -93,26 +106,16 @@ async function run(params) {
 async function warpEncode({ imgCount }) {
   stopOrder = false;
   console.log("Warping and encoding registered images");
-  for (let i = 0; i < imgCount; i++) {
-    if (await shouldStop("saving", i)) {
-      // If the user asked to stop the saving of images,
-      // reset the runStep state to "done" and stop.
-      appLog(0, "Saving stopped by user");
-      await shouldStop("done", null);
-      break;
-    }
-    // Warp and encode image in wasm.
-    let imgArrayU8 = Stenm.register_and_save(i);
-    // Transfer the array buffer back to main thread.
-    postMessage(
-      {
-        type: "registered-image",
-        data: { index: i, arrayBuffer: imgArrayU8.buffer, imgCount },
-      },
-      [imgArrayU8.buffer]
-    );
-  }
-  await shouldStop("done", null);
+  // Warp and encode image in wasm.
+  let imgArrayU8 = Stenm.register_and_save();
+  // Transfer the array buffer back to main thread.
+  postMessage(
+    {
+      type: "registered-image",
+      data: { index: "normal-map", arrayBuffer: imgArrayU8.buffer, imgCount: 1 },
+    },
+    [imgArrayU8.buffer]
+  );
 }
 
 // Log something in the interface with the provided verbosity level.
