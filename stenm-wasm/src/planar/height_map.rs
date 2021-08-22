@@ -72,10 +72,11 @@ pub fn solve_for_nmap(
     laplacian.reserve(11 * nb_pix - 4 * n - 9);
     let total = nb_pix / 1000;
     for i in 0..nb_pix {
-        if is_on_border(i, n, m) {
-            laplacian.push(i, i, 1.0);
-            rhs[i] = 1.0;
-        } else {
+        // if is_on_border(i, n, m) {
+        //     laplacian.push(i, i, 1.0);
+        //     rhs[i] = 1.0;
+        // } else
+        {
             laplacian.push(i, i, 4.0);
             if i >= 1 {
                 laplacian.push(i, i - 1, -1.0);
