@@ -619,7 +619,7 @@ vertexShader =
             float ny = 2.0 * tex.y - 1.0;
             float nz = 2.0 * tex.z - 1.0;
             vnormal = vec3(nx, ny, nz);
-            vcolor = vec3(position, 0);
+            vcolor = normalize(vnormal);
             gl_Position = modelViewProjection * vec4(position, -tex.w * scale, 1.0);
         }
     |]
@@ -638,7 +638,7 @@ fragmentShader =
             // computing directional lighting
             float intensity = dot(normal, directionalLight);
             // gl_FragColor = vec4(vcolor, 1.0);
-            // gl_FragColor = vec4(intensity * vcolor, 1.0);
-            gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
+            gl_FragColor = vec4(intensity * vcolor, 1.0);
+            // gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
         }
     |]
