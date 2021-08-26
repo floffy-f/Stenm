@@ -1895,7 +1895,7 @@ nMapHeaderTab msg nMapPNG =
             else
                 [ Element.inFront (Element.el [ alignRight, padding 2 ] (littleDot "green" |> Element.html)) ]
     in
-    headerTabWithAttributes "N-map" msg otherAttributes
+    headerTabWithAttributes "3D view" msg otherAttributes
 
 hMapHeaderTab : Maybe Msg -> Maybe (Pivot Image) -> Element Msg
 hMapHeaderTab msg hMapPNG =
