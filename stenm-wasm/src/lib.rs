@@ -299,10 +299,6 @@ impl StenmInner {
         let (n, m) = normals.shape();
         log::info!("Computations ok");
 
-        self.normal_map = planar::main::save_normals(&normals).map_err(utils::report_error)?;
-
-        log::info!("Encode PNG OK");
-
         let height_map: Result<
             (nalgebra_new::DMatrix<f32>, nalgebra_new::DMatrix<f32>),
             anyhow::Error,
@@ -323,6 +319,12 @@ impl StenmInner {
                 let to_mat: DMatrix<f32> = DMatrix::from_iterator(n, m, hm.iter().cloned());
                 log::info!("height map rows: {}", to_mat.nrows());
                 log::info!("height map cols: {}", to_mat.ncols());
+
+                self.normal_map =
+                    planar::main::save_normals(&normals, &to_mat).map_err(utils::report_error)?;
+
+                log::info!("Encode PNG OK");
+
                 planar::main::save_matrix(&to_mat).map_err(utils::report_error)?
             }
         };

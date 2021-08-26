@@ -3,18 +3,18 @@ use crate::planar::interop;
 // mod unused;
 
 use glob::glob;
-use image::ImageError;
+use image::{ImageError, RgbaImage};
 use nalgebra::{DMatrix, RealField};
 use std::path::{Path, PathBuf};
 use stenm::interop::ToImage;
 // use std::str::FromStr;
 
-// Default values for some of the program arguments.
-const DEFAULT_OUT_DIR: &str = "out";
-// const DEFAULT_CROP: Crop = Crop::NoCrop;
-const DEFAULT_Z_MEAN: f32 = 3500.0;
-const DEFAULT_THRESHOLD: f32 = 1e-4;
-const DEFAULT_MAX_ITERATIONS: usize = 10;
+// // Default values for some of the program arguments.
+// const DEFAULT_OUT_DIR: &str = "out";
+// // const DEFAULT_CROP: Crop = Crop::NoCrop;
+// const DEFAULT_Z_MEAN: f32 = 3500.0;
+// const DEFAULT_THRESHOLD: f32 = 1e-4;
+// const DEFAULT_MAX_ITERATIONS: usize = 10;
 
 // /// Entry point of the program.
 // fn main() {
@@ -131,24 +131,24 @@ const DEFAULT_MAX_ITERATIONS: usize = 10;
 //     })
 // }
 
-/// Retrieve the absolute paths of all files matching the arguments.
-fn absolute_file_paths(args: &[String]) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-    let mut abs_paths = Vec::new();
-    for path_glob in args {
-        let mut paths = paths_from_glob(path_glob)?;
-        abs_paths.append(&mut paths);
-    }
-    abs_paths
-        .iter()
-        .map(|p| p.canonicalize().map_err(|e| e.into()))
-        .collect()
-}
-
-/// Retrieve the paths of files matchin the glob pattern.
-fn paths_from_glob(p: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-    let paths = glob(p)?;
-    Ok(paths.into_iter().filter_map(|x| x.ok()).collect())
-}
+// /// Retrieve the absolute paths of all files matching the arguments.
+// fn absolute_file_paths(args: &[String]) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+//     let mut abs_paths = Vec::new();
+//     for path_glob in args {
+//         let mut paths = paths_from_glob(path_glob)?;
+//         abs_paths.append(&mut paths);
+//     }
+//     abs_paths
+//         .iter()
+//         .map(|p| p.canonicalize().map_err(|e| e.into()))
+//         .collect()
+// }
+//
+// /// Retrieve the paths of files matchin the glob pattern.
+// fn paths_from_glob(p: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+//     let paths = glob(p)?;
+//     Ok(paths.into_iter().filter_map(|x| x.ok()).collect())
+// }
 
 // #[derive(Debug)]
 // enum Crop {
@@ -242,7 +242,7 @@ pub fn save_matrix(img: &DMatrix<f32>) -> Result<Vec<u8>, ImageError> {
 
 type Coords = (f32, f32, f32);
 
-pub fn save_normals(img: &DMatrix<Coords>) -> Result<Vec<u8>, ImageError> {
+pub fn save_normals(img: &DMatrix<Coords>, height: &DMatrix<f32>) -> Result<Vec<u8>, ImageError> {
     // let mut pixels = img.iter();
     // let (pix_mins, pix_maxs): (Coords, Coords) = match pixels.next() {
     //     None => return,
@@ -254,14 +254,16 @@ pub fn save_normals(img: &DMatrix<Coords>) -> Result<Vec<u8>, ImageError> {
     //     }),
     // };
     let (nrows, ncols) = img.shape();
-    let img_u8: DMatrix<(u8, u8, u8)> = DMatrix::from_iterator(
+    let alpha_max: f32 = height.max();
+    let img_u8: DMatrix<(u8, u8, u8, u8)> = DMatrix::from_iterator(
         nrows,
         ncols,
-        img.iter().map(|&(x, y, z)| {
+        img.iter().zip(height.iter()).map(|(&(x, y, z), &alpha)| {
             (
                 ((x + 1.0) / 2.0 * 255.0) as u8,
                 ((y + 1.0) / 2.0 * 255.0) as u8,
                 ((z + 1.0) / 2.0 * 255.0) as u8,
+                (alpha / alpha_max * 255.0) as u8,
             )
         }),
     );
@@ -269,9 +271,19 @@ pub fn save_normals(img: &DMatrix<Coords>) -> Result<Vec<u8>, ImageError> {
     // .save(path)
     // .unwrap();
     let mut buffer: Vec<u8> = Vec::new();
-    img_u8
-        .to_image()
-        .write_to(&mut buffer, image::ImageOutputFormat::Png)?;
+
+    let mut output = image::RgbaImage::new(nrows as u32, ncols as u32);
+    let mut px: (u8, u8, u8, u8);
+    for x in 0..nrows {
+        for y in 0..ncols {
+            px = img_u8[(x, y)];
+            output.put_pixel(x as u32, y as u32, image::Rgba([px.0, px.1, px.2, px.3]))
+        }
+    }
+    // img_u8
+    //     .to_image()
+    //     .write_to(&mut buffer, image::ImageOutputFormat::Png)?;
+    image::DynamicImage::ImageRgba8(output).write_to(&mut buffer, image::ImageOutputFormat::Png)?;
     Ok(buffer)
 }
 
