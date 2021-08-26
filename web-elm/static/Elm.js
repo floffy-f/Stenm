@@ -25485,7 +25485,7 @@ var $elm_explorations$webgl$WebGL$entity = $elm_explorations$webgl$WebGL$entityW
 	_List_fromArray(
 		[$elm_explorations$webgl$WebGL$Settings$DepthTest$default]));
 var $author$project$View3d$fragmentShader = {
-	src: '\n        precision mediump float;\n        uniform vec3 directionalLight;\n        varying vec3 vcolor;\n        varying vec3 vnormal;\n        void main () {\n            // normalizing the normal varying\n            vec3 normal = normalize(vnormal);\n            // computing directional lighting\n            float intensity = dot(normal, directionalLight);\n            // gl_FragColor = vec4(vcolor, 1.0);\n            // gl_FragColor = vec4(intensity * vcolor, 1.0);\n            gl_FragColor = vec4(intensity, intensity, intensity, 1.0);\n        }\n    ',
+	src: '\n        precision mediump float;\n        uniform vec3 directionalLight;\n        varying vec3 vcolor;\n        varying vec3 vnormal;\n        void main () {\n            // normalizing the normal varying\n            vec3 normal = normalize(vnormal);\n            // computing directional lighting\n            float intensity = dot(normal, directionalLight);\n            // gl_FragColor = vec4(vcolor, 1.0);\n            gl_FragColor = vec4(intensity * vcolor, 1.0);\n            // gl_FragColor = vec4(intensity, intensity, intensity, 1.0);\n        }\n    ',
 	attributes: {},
 	uniforms: {directionalLight: 'e$'}
 };
@@ -25745,7 +25745,7 @@ var $elm_explorations$webgl$WebGL$toHtml = $elm_explorations$webgl$WebGL$toHtmlW
 			$elm_explorations$webgl$WebGL$depth(1)
 		]));
 var $author$project$View3d$vertexShader = {
-	src: '\n        attribute vec2 mapCoordinates;\n        attribute vec2 position;\n        uniform mat4 modelViewProjection;\n        uniform sampler2D texture;\n        uniform float scale;\n        varying vec3 vcolor;\n        varying vec3 vnormal;\n        void main () {\n            vec4 tex = texture2D(texture, mapCoordinates);\n            float nx = 2.0 * tex.x - 1.0;\n            float ny = 2.0 * tex.y - 1.0;\n            float nz = 2.0 * tex.z - 1.0;\n            vnormal = vec3(nx, ny, nz);\n            vcolor = vec3(position, 0);\n            gl_Position = modelViewProjection * vec4(position, -tex.w * scale, 1.0);\n        }\n    ',
+	src: '\n        attribute vec2 mapCoordinates;\n        attribute vec2 position;\n        uniform mat4 modelViewProjection;\n        uniform sampler2D texture;\n        uniform float scale;\n        varying vec3 vcolor;\n        varying vec3 vnormal;\n        void main () {\n            vec4 tex = texture2D(texture, mapCoordinates);\n            float nx = 2.0 * tex.x - 1.0;\n            float ny = 2.0 * tex.y - 1.0;\n            float nz = 2.0 * tex.z - 1.0;\n            vnormal = vec3(nx, ny, nz);\n            vcolor = normalize(vnormal);\n            gl_Position = modelViewProjection * vec4(position, -tex.w * scale, 1.0);\n        }\n    ',
 	attributes: {mapCoordinates: 'fM', position: 'gg'},
 	uniforms: {modelViewProjection: 'fX', scale: 'co', texture: 'ds'}
 };
