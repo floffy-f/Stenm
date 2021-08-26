@@ -31,6 +31,7 @@ export function activatePorts(app, containerSize) {
       const url = URL.createObjectURL(new Blob([arrayBuffer]));
       const decodedCropped = await utils.decodeImage(url);
       croppedImages.push({ id, img: decodedCropped });
+	  app.ports.receiveNMapUrl.send(url);
       if (croppedImages.length == imgCount) {
         console.log(`Normal map computed, sending through port`);
         app.ports.receiveCroppedImages.send(croppedImages);
