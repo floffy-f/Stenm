@@ -21,5 +21,6 @@ rm -f /home/floffy/.cache/chromium/Default/Code\ Cache/js/* 2> /dev/null
 echo "###"
 echo "Clear cache ok"
 echo "###"
+cd static
 python -m http.server 8080
 

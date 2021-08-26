@@ -1,6 +1,7 @@
 port module Main exposing (main)
 
 import Browser
+import View3d
 import Browser.Dom
 import Browser.Navigation
 import Canvas
@@ -23,6 +24,7 @@ import File as F
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
+import Html.Events.Extra.Mouse as Mouse
 import Html.Events.Extra.Pointer as Pointer
 import Html.Events.Extra.Wheel as Wheel
 import Icon
@@ -41,6 +43,7 @@ import Svg.Attributes
 import Task
 import Viewer exposing (Viewer)
 import Viewer.Canvas
+import Browser.Events
 
 
 port resizes : (Device.Size -> msg) -> Sub msg
@@ -76,6 +79,12 @@ port updateRunStep : ({ step : String, progress : Maybe Int } -> msg) -> Sub msg
 port receiveCroppedImages : (List { id : String, img : Value } -> msg) -> Sub msg
 
 port receiveHMap : (List { id : String, img : Value } -> msg) -> Sub msg
+
+port receiveNMapUrl : (String -> msg) -> Sub msg
+
+
+send : View3d.Msg -> Cmd Msg
+send msage = msage |> Msg3d |> Task.succeed |> Task.perform identity
 
 
 main : Program Device.Size Model Msg
@@ -113,6 +122,7 @@ type alias Model =
     , loadLights : LoadResult
     , images : Maybe (Pivot Image)
     , lights : Maybe (Pivot Point3d)
+    , model3d : View3d.Model
     }
 
 type alias Point3d =
@@ -277,7 +287,7 @@ init size =
     -- initialModel size
     --     |> (\m -> { m | state = Loading { names = Set.singleton "img", loaded = Dict.empty } })
     --     |> update (ImageDecoded { id = "img", url = "/img/pano_bayeux.jpg", width = 2000, height = 225 })
-    ( initialModel size, Cmd.none )
+    ( initialModel size, Task.attempt (\res -> Msg3d (View3d.TextureLoaded res)) (View3d.loadTexture "default_normals_and_depth.png"))
 
 
 initialModel : Device.Size -> Model
@@ -305,6 +315,7 @@ initialModel size =
     , loadLights = LoadIdle
     , images = Nothing
     , lights = Nothing
+    , model3d = View3d.LoadingTexture
     }
 
 
@@ -421,9 +432,11 @@ type Msg
     | ToggleAutoScroll Bool
     | ReceiveCroppedImages (List { id : String, img : Value })
     | ReceiveHMap (List { id : String, img : Value })
+    | ReceiveNMapUrl String
     | ReceiveCsv String
     | SaveNMapPNG
     | ScrollLogsToEnd
+    | Msg3d View3d.Msg
 
 
 type DragDropImagesMsg
@@ -522,7 +535,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     case model.state of
         Home _ ->
-            Sub.batch [ resizes WindowResizes, log Log, imageDecoded ImageDecoded ]
+            Sub.batch [ resizes WindowResizes, log Log, imageDecoded ImageDecoded, receiveNMapUrl ReceiveNMapUrl ]
 
         Loading _ ->
             Sub.batch [ resizes WindowResizes, log Log, imageDecoded ImageDecoded ]
@@ -531,19 +544,29 @@ subscriptions model =
             Sub.batch [ resizes WindowResizes, log Log, imageDecoded ImageDecoded ]
 
         ViewImgs _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown, receiveNMapUrl ReceiveNMapUrl ]
 
         Config _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, receiveNMapUrl ReceiveNMapUrl ]
 
         NMap _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
+            Sub.batch
+                [ resizes WindowResizes
+                , log Log
+                , receiveCroppedImages ReceiveCroppedImages
+                , receiveHMap ReceiveHMap
+                , updateRunStep UpdateRunStep
+                , Keyboard.downs KeyDown
+                , Browser.Events.onMouseMove (Json.Decode.map (\pos -> View3d.MouseMove pos |> Msg3d) View3d.movementDecoder)
+                , Browser.Events.onMouseUp (Json.Decode.succeed (Msg3d View3d.MouseUp))
+                , receiveNMapUrl ReceiveNMapUrl
+                ]
 
         HMap _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown, receiveNMapUrl ReceiveNMapUrl ]
 
         Logs _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, receiveNMapUrl ReceiveNMapUrl ]
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -552,6 +575,12 @@ update msg model =
         ( NoMsg, _ ) ->
             ( model, Cmd.none )
 
+        ( Msg3d msg3d, _ ) ->
+            let
+                update3dResult : ( View3d.Model, Cmd View3d.Msg )
+                update3dResult = View3d.update msg3d model.model3d
+            in
+            ( { model | model3d = Tuple.first update3dResult }, update3dResult |> Tuple.second |> Cmd.map Msg3d )
         ( WindowResizes size, _ ) ->
             ( { model
                 | device = Device.classify size
@@ -681,10 +710,16 @@ update msg model =
         ( KeyDown rawKey, NMap _ ) ->
             case Keyboard.navigationKey rawKey of
                 Just Keyboard.ArrowRight ->
-                    ( { model | nMapPNG = Maybe.map goToNextImage model.nMapPNG }, Cmd.none )
+                    ( model, View3d.ShiftLightAzimuth 10 |> send )
 
                 Just Keyboard.ArrowLeft ->
-                    ( { model | nMapPNG = Maybe.map goToPreviousImage model.nMapPNG }, Cmd.none )
+                    ( model, View3d.ShiftLightAzimuth -10 |> send )
+
+                Just Keyboard.ArrowUp ->
+                    ( model, View3d.ShiftLightElevation 1 |> send )
+
+                Just Keyboard.ArrowDown ->
+                    ( model, View3d.ShiftLightElevation -1 |> send )
 
                 _ ->
                     ( model, Cmd.none )
@@ -746,6 +781,144 @@ update msg model =
 
         ( ZoomMsg zoomMsg, HMap _ ) ->
             ( { model | hMapViewer = zoomViewer zoomMsg model.hMapViewer }, Cmd.none )
+
+        -- ( PointerMsg pointerMsg, NMap _ ) ->
+        --     case ( pointerMsg, model.pointerMode ) of
+        --         -- Moving the viewer
+        --         ( PointerDownRaw event, WaitingMove ) ->
+        --             case Json.Decode.decodeValue Pointer.eventDecoder event of
+        --                 Err _ ->
+        --                     ( model, Cmd.none )
+
+        --                 Ok { pointer } ->
+        --                     let
+        --                         pos = pointer.clientPos
+        --                     in
+        --                     ( model, capture event )
+
+        --         ( PointerMove ( newX, newY ), PointerMovingFromClientCoords ( x, y ) ) ->
+        --             ( { model
+        --                 | viewer = Viewer.pan ( newX - x, newY - y ) model.viewer
+        --                 , pointerMode = PointerMovingFromClientCoords ( newX, newY )
+        --               }
+        --             , Cmd.none
+        --             )
+
+        --         ( PointerUp, PointerMovingFromClientCoords _ ) ->
+        --             ( { model | pointerMode = WaitingMove }, Cmd.none )
+
+        --         -- Drawing the cropped area
+        --         ( PointerDownRaw event, WaitingDraw ) ->
+        --             case Json.Decode.decodeValue Pointer.eventDecoder event of
+        --                 Err _ ->
+        --                     ( model, Cmd.none )
+
+        --                 Ok { pointer } ->
+        --                     let
+        --                         ( x, y ) =
+        --                             Viewer.coordinatesAt pointer.offsetPos model.viewer
+        --                     in
+        --                     ( { model
+        --                         | pointerMode = PointerDrawFromOffsetAndClient pointer.offsetPos pointer.clientPos
+        --                         , bboxDrawn = Just { left = x, top = y, right = x, bottom = y }
+        --                       }
+        --                     , capture event
+        --                     )
+
+        --         ( PointerMove ( newX, newY ), PointerDrawFromOffsetAndClient ( oX, oY ) ( cX, cY ) ) ->
+        --             let
+        --                 ( x1, y1 ) =
+        --                     Viewer.coordinatesAt ( oX, oY ) model.viewer
+
+        --                 ( x2, y2 ) =
+        --                     Viewer.coordinatesAt ( oX + newX - cX, oY + newY - cY ) model.viewer
+
+        --                 left : Float
+        --                 left =
+        --                     min x1 x2
+
+        --                 top : Float
+        --                 top =
+        --                     min y1 y2
+
+        --                 right : Float
+        --                 right =
+        --                     max x1 x2
+
+        --                 bottom : Float
+        --                 bottom =
+        --                     max y1 y2
+        --             in
+        --             ( { model | bboxDrawn = Just { left = left, top = top, right = right, bottom = bottom } }
+        --             , Cmd.none
+        --             )
+
+        --         ( PointerUp, PointerDrawFromOffsetAndClient _ _ ) ->
+        --             case model.bboxDrawn of
+        --                 Just { left, right, top, bottom } ->
+        --                     let
+        --                         img : Image
+        --                         img =
+        --                             Pivot.getC (Pivot.goToStart images)
+
+        --                         oldParams : Parameters
+        --                         oldParams =
+        --                             model.params
+
+        --                         oldParamsForm : ParametersForm
+        --                         oldParamsForm =
+        --                             model.paramsForm
+        --                     in
+        --                     if
+        --                         -- sufficient width
+        --                         ((right - left) / model.viewer.scale > 10)
+        --                             -- sufficient height
+        --                             && ((bottom - top) / model.viewer.scale > 10)
+        --                             -- at least one corner inside the image
+        --                             && (right > 0)
+        --                             && (left < toFloat img.width)
+        --                             && (bottom > 0)
+        --                             && (top < toFloat img.height)
+        --                     then
+        --                         let
+        --                             newCropForm : CropForm.State
+        --                             newCropForm =
+        --                                 snapBBox (BBox left top right bottom) oldParamsForm.crop
+
+        --                             newCrop :
+        --                                 Maybe
+        --                                     { left : Int
+        --                                     , top : Int
+        --                                     , right : Int
+        --                                     , bottom : Int
+        --                                     }
+        --                             newCrop =
+        --                                 CropForm.decoded newCropForm
+        --                         in
+        --                         ( { model
+        --                             | pointerMode = WaitingDraw
+        --                             , bboxDrawn = Maybe.map toBBox newCrop
+        --                             , params = { oldParams | crop = newCrop }
+        --                             , paramsForm = { oldParamsForm | crop = newCropForm }
+        --                           }
+        --                         , Cmd.none
+        --                         )
+
+        --                     else
+        --                         ( { model
+        --                             | pointerMode = WaitingDraw
+        --                             , bboxDrawn = Nothing
+        --                             , params = { oldParams | crop = Nothing }
+        --                             , paramsForm = { oldParamsForm | crop = CropForm.toggle False oldParamsForm.crop }
+        --                           }
+        --                         , Cmd.none
+        --                         )
+
+        --                 Nothing ->
+        --                     ( model, Cmd.none )
+
+        --         _ ->
+        --             ( model, Cmd.none )
 
         ( PointerMsg pointerMsg, ViewImgs { images } ) ->
             case ( pointerMsg, model.pointerMode ) of
@@ -1097,6 +1270,9 @@ update msg model =
                       }
                     , Cmd.none
                     )
+
+        ( ReceiveNMapUrl urlString, _ ) ->
+            ( { model | model3d = View3d.LoadingTexture }, Task.attempt (\texture -> Msg3d (View3d.TextureLoaded texture)) (View3d.loadTexture urlString) )
 
         ( ReceiveCsv content, _) ->
             let
@@ -2176,7 +2352,7 @@ verbositySlider verbosity =
 
 
 viewNMap : Model -> Element Msg
-viewNMap ({ nMapPNG, hMapPNG, nMapViewer, notSeenLogs } as model) =
+viewNMap ({ nMapPNG, hMapPNG, nMapViewer, notSeenLogs, model3d } as model) =
     Element.column [ width fill, height fill ]
         [ headerBar
             [ headerTab "Images" (Just (NavigationMsg GoToPageImages))
@@ -2190,89 +2366,97 @@ viewNMap ({ nMapPNG, hMapPNG, nMapViewer, notSeenLogs } as model) =
             Html.node "style"
                 []
                 [ Html.text ".pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }" ]
-        , case nMapPNG of
-            Nothing ->
-                Element.el [ centerX, centerY ]
-                    (Element.text "Normal map not computed yet")
+        , View3d.view model3d
+            |> Element.html
+            |> Element.map (\msg -> Msg3d msg)
+            |> List.singleton
+            |> Element.row []
+                -- [ Pointer.onDown ( \event -> Msg3d (View3d.MouseDown event.pointer) )
+                -- , Pointer.onMove ( \event -> Msg3d (View3d.MouseMove event.pointer.clientPos))
+                -- ]
+        -- , case nMapPNG of
+        --     Nothing ->
+        --         Element.el [ centerX, centerY ]
+        --             (Element.text "Normal map not computed yet")
 
-            Just images ->
-                let
-                    img : Image
-                    img =
-                        Pivot.getC images
+        --     Just images ->
+        --         let
+        --             img : Image
+        --             img =
+        --                 Pivot.getC images
 
-                    clickButton :
-                        Element.Attribute Msg
-                        -> Msg
-                        -> String
-                        -> (Float -> Element Msg)
-                        -> Element Msg
-                    clickButton alignment msg title icon =
-                        Element.Input.button
-                            [ padding 6
-                            , alignment
-                            , Element.Background.color (Element.rgba255 255 255 255 0.8)
-                            , Element.Font.color Style.black
-                            , Element.htmlAttribute <| Html.Attributes.style "box-shadow" "none"
-                            , Element.htmlAttribute <| Html.Attributes.title title
-                            ]
-                            { onPress = Just msg
-                            , label = icon 32
-                            }
+        --             clickButton :
+        --                 Element.Attribute Msg
+        --                 -> Msg
+        --                 -> String
+        --                 -> (Float -> Element Msg)
+        --                 -> Element Msg
+        --             clickButton alignment msg title icon =
+        --                 Element.Input.button
+        --                     [ padding 6
+        --                     , alignment
+        --                     , Element.Background.color (Element.rgba255 255 255 255 0.8)
+        --                     , Element.Font.color Style.black
+        --                     , Element.htmlAttribute <| Html.Attributes.style "box-shadow" "none"
+        --                     , Element.htmlAttribute <| Html.Attributes.title title
+        --                     ]
+        --                     { onPress = Just msg
+        --                     , label = icon 32
+        --                     }
 
-                    buttonsRow : Element Msg
-                    buttonsRow =
-                        Element.row [ centerX ]
-                            [ clickButton centerX (ZoomMsg (ZoomFit img)) "Fit zoom to image" Icon.zoomFit
-                            , clickButton centerX (ZoomMsg ZoomOut) "Zoom out" Icon.zoomOut
-                            , clickButton centerX (ZoomMsg ZoomIn) "Zoom in" Icon.zoomIn
-                            ]
+        --             buttonsRow : Element Msg
+        --             buttonsRow =
+        --                 Element.row [ centerX ]
+        --                     [ clickButton centerX (ZoomMsg (ZoomFit img)) "Fit zoom to image" Icon.zoomFit
+        --                     , clickButton centerX (ZoomMsg ZoomOut) "Zoom out" Icon.zoomOut
+        --                     , clickButton centerX (ZoomMsg ZoomIn) "Zoom in" Icon.zoomIn
+        --                     ]
 
-                    ( viewerWidth, viewerHeight ) =
-                        nMapViewer.size
+        --             ( viewerWidth, viewerHeight ) =
+        --                 nMapViewer.size
 
-                    clearCanvas : Canvas.Renderable
-                    clearCanvas =
-                        Canvas.clear ( 0, 0 ) viewerWidth viewerHeight
+        --             clearCanvas : Canvas.Renderable
+        --             clearCanvas =
+        --                 Canvas.clear ( 0, 0 ) viewerWidth viewerHeight
 
-                    renderedImage : Canvas.Renderable
-                    renderedImage =
-                        Canvas.texture
-                            [ Viewer.Canvas.transform nMapViewer
-                            , Canvas.Settings.Advanced.imageSmoothing False
-                            ]
-                            ( 0, 0 )
-                            img.texture
+        --             renderedImage : Canvas.Renderable
+        --             renderedImage =
+        --                 Canvas.texture
+        --                     [ Viewer.Canvas.transform nMapViewer
+        --                     , Canvas.Settings.Advanced.imageSmoothing False
+        --                     ]
+        --                     ( 0, 0 )
+        --                     img.texture
 
-                    canvasViewer : Html Msg
-                    canvasViewer =
-                        Canvas.toHtml ( round viewerWidth, round viewerHeight )
-                            [ Html.Attributes.id "theCanvas"
-                            , Html.Attributes.style "display" "block"
-                            , Wheel.onWheel (zoomWheelMsg nMapViewer)
-                            , msgOn "pointerdown" (Json.Decode.map (PointerMsg << PointerDownRaw) Json.Decode.value)
-                            , Pointer.onUp (\_ -> PointerMsg PointerUp)
-                            , Html.Attributes.style "touch-action" "none"
-                            , Html.Events.preventDefaultOn "pointermove" <|
-                                Json.Decode.map (\coords -> ( PointerMsg (PointerMove coords), True )) <|
-                                    Json.Decode.map2 Tuple.pair
-                                        (Json.Decode.field "clientX" Json.Decode.float)
-                                        (Json.Decode.field "clientY" Json.Decode.float)
-                            ]
-                            [ clearCanvas, renderedImage ]
-                in
-                Element.el
-                    [ Element.inFront buttonsRow
-                    , Element.inFront
-                        (Element.row [ alignBottom, width fill ]
-                            [ clickButton alignLeft ClickPreviousImage "Previous image" Icon.arrowLeftCircle
-                            , clickButton alignRight ClickNextImage "Next image" Icon.arrowRightCircle
-                            ]
-                        )
-                    , Element.clip
-                    , height fill
-                    ]
-                    (Element.html canvasViewer)
+        --             canvasViewer : Html Msg
+        --             canvasViewer =
+        --                 Canvas.toHtml ( round viewerWidth, round viewerHeight )
+        --                     [ Html.Attributes.id "theCanvas"
+        --                     , Html.Attributes.style "display" "block"
+        --                     , Wheel.onWheel (zoomWheelMsg nMapViewer)
+        --                     , msgOn "pointerdown" (Json.Decode.map (PointerMsg << PointerDownRaw) Json.Decode.value)
+        --                     , Pointer.onUp (\_ -> PointerMsg PointerUp)
+        --                     , Html.Attributes.style "touch-action" "none"
+        --                     , Html.Events.preventDefaultOn "pointermove" <|
+        --                         Json.Decode.map (\coords -> ( PointerMsg (PointerMove coords), True )) <|
+        --                             Json.Decode.map2 Tuple.pair
+        --                                 (Json.Decode.field "clientX" Json.Decode.float)
+        --                                 (Json.Decode.field "clientY" Json.Decode.float)
+        --                     ]
+        --                     [ clearCanvas, renderedImage ]
+        --         in
+        --         Element.el
+        --             [ Element.inFront buttonsRow
+        --             , Element.inFront
+        --                 (Element.row [ alignBottom, width fill ]
+        --                     [ clickButton alignLeft ClickPreviousImage "Previous image" Icon.arrowLeftCircle
+        --                     , clickButton alignRight ClickNextImage "Next image" Icon.arrowRightCircle
+        --                     ]
+        --                 )
+        --             , Element.clip
+        --             , height fill
+        --             ]
+        --             (Element.html canvasViewer)
         ]
 
 
