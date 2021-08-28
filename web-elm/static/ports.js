@@ -27,7 +27,7 @@ export function activatePorts(app, containerSize) {
     } else if (event.data.type == "cropped-image") {
       // Add the cropped image to the list of cropped images.
       const { id, arrayBuffer, imgCount } = event.data.data;
-      console.log("Received cropped image in main:", id);
+      console.log("Received normal map in main:", id);
       const url = URL.createObjectURL(new Blob([arrayBuffer]));
       const decodedCropped = await utils.decodeImage(url);
       croppedImages.push({ id, img: decodedCropped });
@@ -39,14 +39,21 @@ export function activatePorts(app, containerSize) {
     } else if (event.data.type == "hmap") {
       // Add the cropped image to the list of cropped images.
       const { id, arrayBuffer, imgCount } = event.data.data;
-      console.log("Received cropped image in main:", id);
+      console.log("Received height map in main:", id);
       const url = URL.createObjectURL(new Blob([arrayBuffer]));
       const decodedCropped = await utils.decodeImage(url);
       hmap.push({ id, img: decodedCropped });
       if (hmap.length == imgCount) {
-        console.log(`Normal map computed, sending through port`);
+        console.log(`Height map computed, sending through port`);
         app.ports.receiveHMap.send(hmap);
       }
+    } else if (event.data.type == "albedo") {
+      // Add the cropped image to the list of cropped images.
+      const { id, arrayBuffer } = event.data.data;
+      console.log("Received albedo in main:", id);
+      const url = URL.createObjectURL(new Blob([arrayBuffer]));
+      await utils.decodeImage(url);
+      app.ports.receiveAlbedoUrl.send(url);
     } else if (event.data.type == "registered-image") {
       // Add the registered image to the list of registered images.
       const { index, arrayBuffer, imgCount } = event.data.data;

@@ -79,6 +79,7 @@ async function run(params) {
   console.log(`Encoding normal map:`);
   let NMu8 = Stenm.normal_map();
   let HMu8 = Stenm.height_map();
+  let albedou8 = Stenm.albedo_map();
   postMessage(
 	{
 	  type: "cropped-image",
@@ -92,6 +93,13 @@ async function run(params) {
 	  data: { id: "h_map", arrayBuffer: HMu8.buffer, imgCount: 1 },
 	},
 	[HMu8.buffer]
+  );
+  postMessage(
+	{
+	  type: "albedo",
+	  data: { id: "albedo", arrayBuffer: albedou8.buffer, imgCount: 1 },
+	},
+	[albedou8.buffer]
   );
   // for (let i = 0; i < imgCount; i++) {
   //   await shouldStop("encoding", i);

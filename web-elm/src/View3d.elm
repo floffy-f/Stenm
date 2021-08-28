@@ -41,12 +41,16 @@ main =
 type Model
     = Landing
     | LoadingTexture
+    | LoadingAlbedo
+    | TextureOK Texture Int Int
+    | AlbedoOK Texture
     | ErrorLoadingTexture Texture.Error
     | Rendering RenderingModel
 
 
 type alias RenderingModel =
     { depthMap : Texture
+    , albedoMap : Texture
     , size : ( Int, Int )
     , mesh : Mesh Vertex
     , currentTime : Float
@@ -127,6 +131,7 @@ type Msg
     | ImageLoaded File
     | UrlGenerated String
     | TextureLoaded (Result Texture.Error Texture)
+    | AlbedoLoaded (Result Texture.Error Texture)
     | ClickedSelectImageButton
       -- Camera
     | ZoomIn
@@ -169,7 +174,10 @@ update msg model =
         ( TextureLoaded (Err err), _ ) ->
             ( ErrorLoadingTexture err, Cmd.none )
 
-        ( TextureLoaded (Ok texture), _ ) ->
+        ( AlbedoLoaded (Err err), _ ) ->
+            ( ErrorLoadingTexture err, Cmd.none )
+
+        ( TextureLoaded (Ok texture), AlbedoOK albedo ) ->
             let
                 ( w, h ) =
                     Texture.size texture
@@ -183,9 +191,35 @@ update msg model =
                 , camera = initialOrbitCamera (centerTarget ( w, h ))
                 , lighting = initialLighting
                 , depthScale = 0.1
+                , albedoMap = albedo
                 }
             , Cmd.none
             )
+
+        ( TextureLoaded (Ok texture), _ ) ->
+            let
+                ( w, h ) =
+                    Texture.size texture
+            in
+            ( TextureOK texture w h, Cmd.none )
+
+        ( AlbedoLoaded (Ok texture), TextureOK nmap w h ) ->
+            ( Rendering
+                { depthMap = nmap
+                , mesh = gridMesh w h
+                , size = ( w, h )
+                , currentTime = 0
+                , controlling = NoControl
+                , camera = initialOrbitCamera (centerTarget ( w, h ))
+                , lighting = initialLighting
+                , depthScale = 0.1
+                , albedoMap = texture
+                }
+            , Cmd.none
+            )
+
+        ( AlbedoLoaded (Ok texture), _ ) ->
+            ( AlbedoOK texture, Cmd.none )
 
         ( AnimationFrame elapsed, Rendering r ) ->
             ( Rendering { r | currentTime = r.currentTime + elapsed }
@@ -356,13 +390,22 @@ view model =
         LoadingTexture ->
             Html.text "Loading texture ..."
 
+        TextureOK _ _ _ ->
+            Html.text "Waiting for albedo..."
+
+        LoadingAlbedo ->
+            Html.text "Loading albedo..."
+
+        AlbedoOK _ ->
+            Html.text "Waiting for texture..."
+
         ErrorLoadingTexture e ->
             Html.text ("X: An error occurred when loading texture -> " ++ (case e of
                 Texture.SizeError _ _ -> "Sizeerror"
                 Texture.LoadError -> "Loaderror"
                 ))
 
-        Rendering { depthMap, mesh, camera, lighting, depthScale } ->
+        Rendering { depthMap, mesh, camera, lighting, depthScale, albedoMap } ->
             Html.div []
                 [ Html.button
                     [ HE.onClick ClickedSelectImageButton ]
@@ -382,6 +425,7 @@ view model =
                         { modelViewProjection = modelViewProjection camera
                         , directionalLight = directionalLight lighting
                         , texture = depthMap
+                        , albedo = albedoMap
                         , scale = depthScale
                         }
                     ]
@@ -600,10 +644,11 @@ type alias Uniforms =
     , directionalLight : Vec3
     , texture : Texture
     , scale : Float
+    , albedo : Texture
     }
 
 
-vertexShader : Shader Vertex Uniforms { vcolor : Vec3, vnormal : Vec3 }
+vertexShader : Shader Vertex Uniforms { vcolor : Vec3, vnormal : Vec3, kd : Float }
 vertexShader =
     [glsl|
         attribute vec2 mapCoordinates;
@@ -611,8 +656,10 @@ vertexShader =
         uniform mat4 modelViewProjection;
         uniform sampler2D texture;
         uniform float scale;
+        uniform sampler2D albedo;
         varying vec3 vcolor;
         varying vec3 vnormal;
+        varying float kd;
         void main () {
             vec4 tex = texture2D(texture, mapCoordinates);
             float nx = 2.0 * tex.x - 1.0;
@@ -620,25 +667,31 @@ vertexShader =
             float nz = 2.0 * tex.z - 1.0;
             vnormal = vec3(nx, ny, nz);
             vcolor = normalize(vnormal);
+            kd = texture2D(albedo, mapCoordinates).x;
             gl_Position = modelViewProjection * vec4(position, -tex.w * scale, 1.0);
         }
     |]
 
 
-fragmentShader : Shader {} Uniforms { vcolor : Vec3, vnormal : Vec3 }
+fragmentShader : Shader {} Uniforms { vcolor : Vec3, vnormal : Vec3, kd : Float }
 fragmentShader =
     [glsl|
         precision mediump float;
         uniform vec3 directionalLight;
         varying vec3 vcolor;
         varying vec3 vnormal;
+        varying float kd;
         void main () {
             // normalizing the normal varying
             vec3 normal = normalize(vnormal);
             // computing directional lighting
-            float intensity = dot(normal, directionalLight);
+            float intensity = dot(normal, directionalLight) * kd;
+
+            // reflection direction Rm
+            // vec3 reflection = 2 * intensity * normal - directionalLight;
+
             // gl_FragColor = vec4(vcolor, 1.0);
-            gl_FragColor = vec4(intensity * vcolor, 1.0);
-            // gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
+            // gl_FragColor = vec4(intensity * vcolor, 1.0);
+            gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
         }
     |]

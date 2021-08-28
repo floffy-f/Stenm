@@ -80,6 +80,8 @@ port receiveCroppedImages : (List { id : String, img : Value } -> msg) -> Sub ms
 
 port receiveHMap : (List { id : String, img : Value } -> msg) -> Sub msg
 
+port receiveAlbedoUrl : (String -> msg) -> Sub msg
+
 port receiveNMapUrl : (String -> msg) -> Sub msg
 
 
@@ -111,6 +113,8 @@ type alias Model =
     , bboxDrawn : Maybe BBox
     , nMapPNG : Maybe (Pivot Image)
     , hMapPNG : Maybe (Pivot Image)
+    , albedoUrl : Maybe String
+    , nmapUrl : Maybe String
     , seenLogs : List { lvl : Int, content : String }
     , notSeenLogs : List { lvl : Int, content : String }
     , scrollPos : Float
@@ -300,6 +304,8 @@ initialModel size =
     , viewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
     , nMapViewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
     , hMapViewer = Viewer.withSize ( size.width, size.height - toFloat (headerHeight + progressBarHeight) )
+    , albedoUrl = Nothing
+    , nmapUrl = Nothing
     , pointerMode = WaitingMove
     , bboxDrawn = Nothing
     , nMapPNG = Nothing
@@ -433,6 +439,7 @@ type Msg
     | ReceiveCroppedImages (List { id : String, img : Value })
     | ReceiveHMap (List { id : String, img : Value })
     | ReceiveNMapUrl String
+    | ReceiveAlbedoUrl String
     | ReceiveCsv String
     | SaveNMapPNG
     | ScrollLogsToEnd
@@ -544,10 +551,10 @@ subscriptions model =
             Sub.batch [ resizes WindowResizes, log Log, imageDecoded ImageDecoded ]
 
         ViewImgs _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown, receiveNMapUrl ReceiveNMapUrl ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, receiveAlbedoUrl ReceiveAlbedoUrl, updateRunStep UpdateRunStep, Keyboard.downs KeyDown, receiveNMapUrl ReceiveNMapUrl ]
 
         Config _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, receiveNMapUrl ReceiveNMapUrl ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, receiveAlbedoUrl ReceiveAlbedoUrl, updateRunStep UpdateRunStep, receiveNMapUrl ReceiveNMapUrl ]
 
         NMap _ ->
             Sub.batch
@@ -555,6 +562,7 @@ subscriptions model =
                 , log Log
                 , receiveCroppedImages ReceiveCroppedImages
                 , receiveHMap ReceiveHMap
+                , receiveAlbedoUrl ReceiveAlbedoUrl
                 , updateRunStep UpdateRunStep
                 , Keyboard.downs KeyDown
                 , Browser.Events.onMouseMove (Json.Decode.map (\pos -> View3d.MouseMove pos |> Msg3d) View3d.movementDecoder)
@@ -563,10 +571,10 @@ subscriptions model =
                 ]
 
         HMap _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, Keyboard.downs KeyDown, receiveNMapUrl ReceiveNMapUrl ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, receiveAlbedoUrl ReceiveAlbedoUrl, updateRunStep UpdateRunStep, Keyboard.downs KeyDown, receiveNMapUrl ReceiveNMapUrl ]
 
         Logs _ ->
-            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, updateRunStep UpdateRunStep, receiveNMapUrl ReceiveNMapUrl ]
+            Sub.batch [ resizes WindowResizes, log Log, receiveCroppedImages ReceiveCroppedImages, receiveHMap ReceiveHMap, receiveAlbedoUrl ReceiveAlbedoUrl, updateRunStep UpdateRunStep, receiveNMapUrl ReceiveNMapUrl ]
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -1272,7 +1280,20 @@ update msg model =
                     )
 
         ( ReceiveNMapUrl urlString, _ ) ->
-            ( { model | model3d = View3d.LoadingTexture }, Task.attempt (\texture -> Msg3d (View3d.TextureLoaded texture)) (View3d.loadTexture urlString) )
+            ( { model
+                | model3d = View3d.LoadingTexture
+                , nmapUrl = Just urlString
+              }
+            , Task.attempt (\texture -> Msg3d (View3d.TextureLoaded texture)) (View3d.loadTexture urlString)
+            )
+
+        ( ReceiveAlbedoUrl urlString, _ ) ->
+            ( { model
+                | model3d = View3d.LoadingAlbedo
+                , albedoUrl = Just urlString
+              }
+            , Task.attempt (\texture -> Msg3d (View3d.AlbedoLoaded texture)) (View3d.loadTexture urlString)
+            )
 
         ( ReceiveCsv content, _) ->
             let

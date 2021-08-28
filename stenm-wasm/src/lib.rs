@@ -64,6 +64,9 @@ impl Stenm {
     pub fn height_map(&self) -> Result<Box<[u8]>, JsValue> {
         self.0.borrow().height_map()
     }
+    pub fn albedo_map(&self) -> Result<Box<[u8]>, JsValue> {
+        self.0.borrow().albedo_map()
+    }
     // pub fn cropped_img_file(&self, i: usize) -> Result<Box<[u8]>, JsValue> {
     //     self.0.borrow().cropped_img_file(i)
     // }
@@ -88,6 +91,7 @@ struct StenmInner {
     lights: Vec<(f32, f32, f32)>,
     normal_map: Vec<u8>,
     height_map: Vec<u8>,
+    albedo_map: Vec<u8>,
 }
 
 enum Dataset {
@@ -128,6 +132,7 @@ impl StenmInner {
             lights: Vec::new(),
             normal_map: Vec::<u8>::new(),
             height_map: Vec::<u8>::new(),
+            albedo_map: Vec::<u8>::new(),
         }
     }
 
@@ -215,6 +220,7 @@ impl StenmInner {
         // self.motion_vec = None;
         self.normal_map.clear();
         self.height_map.clear();
+        self.albedo_map.clear();
         let args: Args = params.into_serde().unwrap();
         utils::WasmLogger::setup(utils::verbosity_filter(args.config.verbosity));
 
@@ -230,7 +236,7 @@ impl StenmInner {
         log::info!("Conf : {}", conf.z_mean);
 
         // // Use the algorithm corresponding to the type of data.
-        let (_, normals, _) = match &self.dataset {
+        let (_, normals, albedo) = match &self.dataset {
             Dataset::Empty => todo!(), //Vec::new(),
             Dataset::GrayImages(gray_imgs) => {
                 todo!()
@@ -289,7 +295,7 @@ impl StenmInner {
                 let results = planar::pps::photometric_stereo(conf, &raw_images)
                     .map_err(utils::report_error)?;
                 log::info!("Planar ok");
-                results
+                (results.0, results.1.transpose(), results.2)
             }
             Dataset::RgbImagesU16(imgs) => {
                 todo!()
@@ -325,6 +331,9 @@ impl StenmInner {
 
                 log::info!("Encode PNG OK");
 
+                self.albedo_map =
+                    planar::main::save_matrix(&albedo).map_err(utils::report_error)?;
+
                 planar::main::save_matrix(&to_mat).map_err(utils::report_error)?
             }
         };
@@ -351,6 +360,11 @@ impl StenmInner {
         // WARNING : is the clone useful ??
         // Maybe we don't need to lose ownership.
         Ok(self.height_map.clone().into_boxed_slice())
+    }
+    pub fn albedo_map(&self) -> Result<Box<[u8]>, JsValue> {
+        // WARNING : is the clone useful ??
+        // Maybe we don't need to lose ownership.
+        Ok(self.albedo_map.clone().into_boxed_slice())
     }
 
     // // Retrieve the cropped registered images.
