@@ -26,8 +26,6 @@ import Viewpoint3d
 import WebGL exposing (Mesh, Shader)
 import WebGL.Matrices
 import WebGL.Texture as Texture exposing (Texture)
-import FeatherIcons exposing (camera)
-
 
 main : Program Value Model Msg
 main =

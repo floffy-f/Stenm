@@ -24,7 +24,6 @@ import File as F
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
-import Html.Events.Extra.Mouse as Mouse
 import Html.Events.Extra.Pointer as Pointer
 import Html.Events.Extra.Wheel as Wheel
 import Icon

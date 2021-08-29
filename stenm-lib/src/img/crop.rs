@@ -30,6 +30,8 @@ pub enum CropError {
     TooManyArgs,
     #[error("Error parsing crop frame coordinates")]
     Parse(#[from] std::num::ParseIntError),
+    #[error("No img in the crop")]
+    NoImage,
 }
 
 impl TryFrom<Vec<&str>> for Crop {
