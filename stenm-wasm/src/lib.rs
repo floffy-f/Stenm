@@ -230,6 +230,7 @@ impl StenmInner {
         log::info!("Conf : {}", conf.z_mean);
 
         // // Use the algorithm corresponding to the type of data.
+        let first_img_cropped: Result<DMatrix<(u8, u8, u8)>, stenm::img::crop::CropError>;
         let (_, normals, _) = match &self.dataset {
             Dataset::Empty => todo!(), //Vec::new(),
             Dataset::GrayImages(gray_imgs) => {
@@ -239,38 +240,18 @@ impl StenmInner {
                 todo!()
             }
             Dataset::RgbImages(imgs) => {
-                // let cropped_imgs: &Vec<DMatrix<(u8, u8, u8)>> = match args.crop {
-                //     None => imgs,
-                //     Some(frame) => imgs
-                //         .iter()
-                //         .map(|im| {
-                //             im.slice(
-                //                 (frame.top, frame.left),
-                //                 (frame.bottom - frame.top, frame.right - frame.left),
-                //             )
-                //             .into_owned()
-                //         })
-                //         .collect(),
-                // };
-                let raw_images: Vec<DMatrix<f32>> = match args.crop {
+                let gray_images: Vec<DMatrix<f32>> = match args.crop {
                     None => imgs.iter().map(|im| f32_image_matrix(im)).collect(),
                     Some(frame) => {
                         let cropped: Result<Vec<DMatrix<f32>>, _> = imgs
                             .iter()
-                            // .map(|im| {
-                            //     log::info!("1st px : {:?}", im[1]);
-                            //     im
-                            // })
                             .map(|im| f32_image_matrix(im))
-                            // .map(|im| {
-                            //     // let mean = im.as_ref().map(|i| i.mean()).unwrap_or(0.0);
-                            //     log::info!("1st float : {:?}", im[1]);
-                            //     let mean = im.mean();
-                            //     log::info!("Moy :{}", mean);
-                            //     im
-                            // })
                             .map(|im| crop(frame, &im))
                             .collect();
+                        first_img_cropped = match imgs.get(0) {
+                            Some(im) => crop(frame, &im),
+                            None => Err(stenm::img::crop::CropError::NoImage),
+                        };
                         match cropped {
                             Err(e) => {
                                 log::info!("Problem while cropping : {}", e);
@@ -283,10 +264,8 @@ impl StenmInner {
                         }
                     }
                 };
-                // let raw_images: Vec<DMatrix<f32>> =
-                //     raw_images.map_err(utils::report_error).context("Pbm crop");
                 log::info!("RGB");
-                let results = planar::pps::photometric_stereo(conf, &raw_images)
+                let results = planar::pps::photometric_stereo(conf, &gray_images)
                     .map_err(utils::report_error)?;
                 log::info!("Planar ok");
                 results
