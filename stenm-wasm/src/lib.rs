@@ -247,7 +247,13 @@ impl StenmInner {
             }
             Dataset::RgbImages(imgs) => {
                 let gray_images: Vec<DMatrix<f32>> = match args.crop {
-                    None => imgs.iter().map(|im| f32_image_matrix(im)).collect(),
+                    None => {
+                        first_img_cropped = match imgs.get(0) {
+                            Some(_im) => Err(stenm::img::crop::CropError::NoImage),
+                            None => Err(stenm::img::crop::CropError::NoImage),
+                        };
+                        imgs.iter().map(|im| f32_image_matrix(im)).collect()
+                    }
                     Some(frame) => {
                         let cropped: Result<Vec<DMatrix<f32>>, _> = imgs
                             .iter()
@@ -275,6 +281,7 @@ impl StenmInner {
                     .map_err(utils::report_error)?;
                 log::info!("Planar ok");
                 results
+                // (results.0, results.1.transpose(), results.2)
             }
             Dataset::RgbImagesU16(imgs) => {
                 todo!()
@@ -310,9 +317,11 @@ impl StenmInner {
 
                 log::info!("Encode PNG OK");
 
-                self.albedo_map =
-                    planar::main::save_matrix(&albedo).map_err(utils::report_error)?;
-
+                self.albedo_map = match first_img_cropped {
+                    Ok(im) => planar::main::save_normals(&f32_rgb_matrix(&im), &albedo)
+                        .map_err(utils::report_error)?,
+                    Err(e) => planar::main::save_matrix(&albedo).map_err(utils::report_error)?,
+                };
                 planar::main::save_matrix(&to_mat).map_err(utils::report_error)?
             }
         };
@@ -452,6 +461,9 @@ fn into_gray_u8(m: DMatrix<u16>) -> DMatrix<u8> {
 trait IntoF32Gray {
     fn into_gray_f32(self) -> f32;
 }
+trait IntoF32Rgb {
+    fn into_rgb_f32(self) -> (f32, f32, f32);
+}
 
 impl IntoF32Gray for (u8, u8, u8) {
     fn into_gray_f32(self) -> f32 {
@@ -467,7 +479,36 @@ impl IntoF32Gray for (u16, u16, u16) {
     }
 }
 
+impl IntoF32Rgb for (u8, u8, u8) {
+    fn into_rgb_f32(self) -> (f32, f32, f32) {
+        // (0.2989 * self.0 as f32 + 0.5870 * self.1 as f32 + 0.1140 * self.2 as f32).min(255.0)
+        //     / 255.0
+        (
+            (self.0 as f32).min(255.0) / 255.0,
+            (self.1 as f32).min(255.0) / 255.0,
+            (self.2 as f32).min(255.0) / 255.0,
+        )
+    }
+}
+impl IntoF32Rgb for (u16, u16, u16) {
+    fn into_rgb_f32(self) -> (f32, f32, f32) {
+        let cap: f32 = 256.0 * 256.0 - 1.0;
+        // (0.2989 * self.0 as f32 + 0.5870 * self.1 as f32 + 0.1140 * self.2 as f32)
+        //     .min(256.0 * 256.0 - 1.0)
+        //     / (256.0 * 256.0 - 1.0)
+        (
+            (self.0 as f32).min(cap) / cap,
+            (self.1 as f32).min(cap) / cap,
+            (self.2 as f32).min(cap) / cap,
+        )
+    }
+}
+
 fn f32_image_matrix<T: IntoF32Gray + Clone + Scalar>(mat: &DMatrix<T>) -> DMatrix<f32> {
     let (d1, d2) = mat.shape();
     DMatrix::from_iterator(d1, d2, mat.iter().map(|pix| pix.clone().into_gray_f32()))
+}
+fn f32_rgb_matrix<T: IntoF32Rgb + Clone + Scalar>(mat: &DMatrix<T>) -> DMatrix<(f32, f32, f32)> {
+    let (d1, d2) = mat.shape();
+    DMatrix::from_iterator(d1, d2, mat.iter().map(|pix| pix.clone().into_rgb_f32()))
 }

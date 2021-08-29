@@ -532,7 +532,7 @@ inverseView camera =
     camera
         |> Viewpoint3d.orbitZ
         |> WebGL.Matrices.viewMatrix
-        |> Math.Matrix4.transpose
+        --|> Math.Matrix4.transpose
         |> Math.Matrix4.inverse
 
 justModel : Mat4
@@ -693,14 +693,15 @@ vertexShader =
 
         void main () {
             vec4 tex = texture2D(texture, mapCoordinates);
+            vec4 rgb_and_albedo = texture2D(albedo, mapCoordinates);
             vec4 pos_4 = vec4(position, -tex.w * scale, 1.0);
             vec4 pre_w = model * pos_4;
             float nx = 2.0 * tex.x - 1.0;
             float ny = 2.0 * tex.y - 1.0;
             float nz = 2.0 * tex.z - 1.0;
             vnormal = vec3(nx, ny, nz);
-            vcolor = normalize(vnormal);
-            kd = texture2D(albedo, mapCoordinates).x;
+            vcolor = rgb_and_albedo.xyz;
+            kd = rgb_and_albedo.w;
             w_camera = view[3].xyz;
             w_position = pre_w.xyz / pre_w.w;
             gl_Position = modelViewProjection * pos_4;
@@ -733,6 +734,6 @@ fragmentShader =
             // gl_FragColor = vec4(vcolor, 1.0);
             // gl_FragColor = vec4(intensity * vcolor, 1.0);
             // gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
-            gl_FragColor = vec4((kd * intensity + ks * specularity) * vec3(1.0, 1.0, 1.0), 1.0);
+            gl_FragColor = vec4((kd * intensity + ks * specularity) * vcolor, 1.0);
         }
     |]
