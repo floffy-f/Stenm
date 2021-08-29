@@ -26,6 +26,7 @@ import Viewpoint3d
 import WebGL exposing (Mesh, Shader)
 import WebGL.Matrices
 import WebGL.Texture as Texture exposing (Texture)
+import FeatherIcons exposing (camera)
 
 
 main : Program Value Model Msg
@@ -406,30 +407,36 @@ view model =
                 ))
 
         Rendering { depthMap, mesh, camera, lighting, depthScale, albedoMap } ->
-            Html.div []
-                [ Html.button
-                    [ HE.onClick ClickedSelectImageButton ]
-                    [ Html.text "Select a PNG image containing normals and depth" ]
-                , lightControls lighting
-                , WebGL.toHtml
-                    [ width 800
-                    , height 800
-                    , style "display" "block"
-                    , Wheel.onWheel chooseZoom
-                    , Mouse.onDown MouseDown
-                    ]
-                    [ WebGL.entity
-                        vertexShader
-                        fragmentShader
-                        mesh
-                        { modelViewProjection = modelViewProjection camera
-                        , directionalLight = directionalLight lighting
-                        , texture = depthMap
-                        , albedo = albedoMap
-                        , scale = depthScale
-                        }
-                    ]
-                ]
+            case inverseView camera of
+                Nothing ->
+                    Html.text "View matrix non-invertible somehow. Please recharge page."
+                Just inverseViewMatrix ->
+                    Html.div []
+                        [ Html.button
+                            [ HE.onClick ClickedSelectImageButton ]
+                            [ Html.text "Select a PNG image containing normals and depth" ]
+                        , lightControls lighting
+                        , WebGL.toHtml
+                            [ width 800
+                            , height 800
+                            , style "display" "block"
+                            , Wheel.onWheel chooseZoom
+                            , Mouse.onDown MouseDown
+                            ]
+                            [ WebGL.entity
+                                vertexShader
+                                fragmentShader
+                                mesh
+                                { modelViewProjection = modelViewProjection camera
+                                , directionalLight = directionalLight lighting
+                                , texture = depthMap
+                                , albedo = albedoMap
+                                , scale = depthScale
+                                , view = inverseViewMatrix
+                                , model = justModel
+                                }
+                            ]
+                        ]
 
 
 directionalLight : Lighting -> Vec3
@@ -522,6 +529,16 @@ modelViewProjection camera =
         , aspectRatio = 1
         }
 
+inverseView : OrbitCamera -> Maybe Mat4
+inverseView camera =
+    camera
+        |> Viewpoint3d.orbitZ
+        |> WebGL.Matrices.viewMatrix
+        |> Math.Matrix4.transpose
+        |> Math.Matrix4.inverse
+
+justModel : Mat4
+justModel = WebGL.Matrices.modelMatrix Frame3d.atOrigin
 
 persectiveCamera : OrbitCamera -> Camera3d Meters ()
 persectiveCamera camera =
@@ -645,10 +662,20 @@ type alias Uniforms =
     , texture : Texture
     , scale : Float
     , albedo : Texture
+    , view : Mat4
+    , model : Mat4
+    }
+
+type alias Varyings =
+    { vcolor : Vec3
+    , vnormal : Vec3
+    , kd : Float
+    , w_camera : Vec3
+    , w_position : Vec3
     }
 
 
-vertexShader : Shader Vertex Uniforms { vcolor : Vec3, vnormal : Vec3, kd : Float }
+vertexShader : Shader Vertex Uniforms Varyings
 vertexShader =
     [glsl|
         attribute vec2 mapCoordinates;
@@ -657,23 +684,33 @@ vertexShader =
         uniform sampler2D texture;
         uniform float scale;
         uniform sampler2D albedo;
+        uniform mat4 view;
+        uniform mat4 model;
         varying vec3 vcolor;
         varying vec3 vnormal;
+        varying vec3 w_camera;
         varying float kd;
+        varying vec3 w_position;
+
+
         void main () {
             vec4 tex = texture2D(texture, mapCoordinates);
+            vec4 pos_4 = vec4(position, -tex.w * scale, 1.0);
+            vec4 pre_w = model * pos_4;
             float nx = 2.0 * tex.x - 1.0;
             float ny = 2.0 * tex.y - 1.0;
             float nz = 2.0 * tex.z - 1.0;
             vnormal = vec3(nx, ny, nz);
             vcolor = normalize(vnormal);
             kd = texture2D(albedo, mapCoordinates).x;
-            gl_Position = modelViewProjection * vec4(position, -tex.w * scale, 1.0);
+            w_camera = view[3].xyz;
+            w_position = pre_w.xyz / pre_w.w;
+            gl_Position = modelViewProjection * pos_4;
         }
     |]
 
 
-fragmentShader : Shader {} Uniforms { vcolor : Vec3, vnormal : Vec3, kd : Float }
+fragmentShader : Shader {} Uniforms Varyings
 fragmentShader =
     [glsl|
         precision mediump float;
@@ -681,17 +718,23 @@ fragmentShader =
         varying vec3 vcolor;
         varying vec3 vnormal;
         varying float kd;
+        varying vec3 w_camera;
+        varying vec3 w_position;
         void main () {
             // normalizing the normal varying
             vec3 normal = normalize(vnormal);
+            vec3 w_view = normalize(w_camera - w_position);
             // computing directional lighting
-            float intensity = dot(normal, directionalLight) * kd;
+            float intensity = max(0.0, dot(normal, directionalLight));
 
             // reflection direction Rm
-            // vec3 reflection = 2 * intensity * normal - directionalLight;
+            vec3 reflection = (2.0 * intensity) * normal - directionalLight;
+            float ks = 0.4;
+            float specularity = max(0.0, pow(dot(reflection, w_view), 2.0));
 
             // gl_FragColor = vec4(vcolor, 1.0);
             // gl_FragColor = vec4(intensity * vcolor, 1.0);
-            gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
+            // gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
+            gl_FragColor = vec4((kd * intensity + ks * specularity) * vec3(1.0, 1.0, 1.0), 1.0);
         }
     |]
