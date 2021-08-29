@@ -720,6 +720,9 @@ fragmentShader =
         varying vec3 w_camera;
         varying vec3 w_position;
         void main () {
+            float s = 0.6;
+            float ka = 0.3;
+
             // normalizing the normal varying
             vec3 normal = normalize(vnormal);
             vec3 w_view = normalize(w_camera - w_position);
@@ -728,12 +731,12 @@ fragmentShader =
 
             // reflection direction Rm
             vec3 reflection = (2.0 * intensity) * normal - directionalLight;
-            float ks = 0.4;
-            float specularity = max(0.0, pow(dot(reflection, w_view), 2.0));
+            float ks = kd / 2.0;
+            float specularity = max(0.0, pow(dot(reflection, w_view), s));
 
             // gl_FragColor = vec4(vcolor, 1.0);
             // gl_FragColor = vec4(intensity * vcolor, 1.0);
             // gl_FragColor = vec4(intensity, intensity, intensity, 1.0);
-            gl_FragColor = vec4((kd * intensity + ks * specularity) * vcolor, 1.0);
+            gl_FragColor = vec4((ka + kd * intensity + ks * specularity) * vcolor, 1.0);
         }
     |]
