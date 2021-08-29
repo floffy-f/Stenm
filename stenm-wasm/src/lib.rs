@@ -237,7 +237,7 @@ impl StenmInner {
 
         // // Use the algorithm corresponding to the type of data.
         let first_img_cropped: Result<DMatrix<(u8, u8, u8)>, stenm::img::crop::CropError>;
-        let (_, normals, _) = match &self.dataset {
+        let (_, normals, albedo) = match &self.dataset {
             Dataset::Empty => todo!(), //Vec::new(),
             Dataset::GrayImages(gray_imgs) => {
                 todo!()
